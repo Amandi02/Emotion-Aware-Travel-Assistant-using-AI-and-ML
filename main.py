@@ -9,25 +9,48 @@ app = FastAPI(title="Fusion Engine Backend (Live)")
 @app.post("/recommend")
 def recommend_places(data: FusionRequest):
     
+    print(f"📥 RECEIVED REQUEST: Emotion={data.emotion}, Lat={data.lat}, Lon={data.lon}")
+
     # --- 1. LIVE CONTEXT CHECK ---
     # Fetch real weather condition for the user's location
     real_weather = weather_service.get_current_weather(data.lat, data.lon)
+    print(f"🌤️ LIVE WEATHER: {real_weather}")
     
     # --- 2. FUSE SIGNALS (Logic Layer) ---
-    # We pass the real weather into your Thesis Logic
-    # Note: We need to update logic.py to accept 'weather' if it doesn't already
-    # For now, we handle the 'Rain' logic here or inside the intent helper.
-    
     intent, calculated_d0 = determine_user_state(
         data.emotion, 
         data.step_count, 
         data.local_time_hour
     )
     
-    # Logic Override: If it's raining, force indoor intent & smaller radius
+    # --- KEYWORD MAPPING (Critical Fix) ---
+    # We must translate "Thesis Intent" -> "Google Maps Keyword"
+    google_keyword = "restaurant" # default
+
+    # Base Logic
+    if "Exploration" in intent:
+        google_keyword = "tourist_attraction"
+    elif "Comfort" in intent:
+        google_keyword = "cafe"
+    elif "Safety" in intent:
+        google_keyword = "hotel"
+    elif "Relief" in intent:
+        google_keyword = "bar"
+    elif "Shopping" in intent:
+        google_keyword = "shopping_mall"
+
+    # Weather Override Logic
     if real_weather == "Rainy":
         intent = f"Indoor {intent}"
-        calculated_d0 = int(calculated_d0 * 0.7)
+        calculated_d0 = int(calculated_d0 * 0.7) # Reduce radius
+        
+        # Force indoor keywords
+        if "Exploration" in intent:
+            google_keyword = "museum"
+        elif "Comfort" in intent:
+            google_keyword = "coffee_shop"
+
+    print(f"🧠 FUSION LOGIC: Intent='{intent}' -> Keyword='{google_keyword}' (Radius: {calculated_d0}m)")
 
     # --- 3. LIVE GOOGLE SEARCH ---
     # We search with a slightly larger radius to give the VFM algo options to rank
@@ -36,7 +59,7 @@ def recommend_places(data: FusionRequest):
     candidates = places_service.search_places(
         data.lat, 
         data.lon, 
-        keyword=intent, 
+        keyword=google_keyword, 
         radius=search_radius
     )
 
@@ -55,6 +78,7 @@ def recommend_places(data: FusionRequest):
     # Sort by Score (High to Low)
     results.sort(key=lambda x: x['final_score'], reverse=True)
 
+    # Return top 10
     return {
         "user_context": {
             "detected_weather": real_weather,
@@ -62,5 +86,5 @@ def recommend_places(data: FusionRequest):
             "calculated_radius": calculated_d0,
             "fatigue_override": data.step_count > 10000
         },
-        "recommendations": results[:10] # Return top 10
+        "recommendations": results[:10] 
     }

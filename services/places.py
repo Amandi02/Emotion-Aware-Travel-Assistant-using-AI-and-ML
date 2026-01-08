@@ -6,7 +6,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
-BASE_URL = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
+# UPDATED: Using the V1 "New" API Endpoint
+BASE_URL = "https://places.googleapis.com/v1/places:searchText"
 
 def haversine_distance(lat1, lon1, lat2, lon2):
     """
@@ -27,38 +28,83 @@ def haversine_distance(lat1, lon1, lat2, lon2):
 
 def search_places(lat: float, lon: float, keyword: str, radius: int):
     """
-    Fetches places from Google Maps and calculates real distance.
+    Fetches places using the Google Places API (New).
     """
     if not API_KEY:
-        print("⚠️ No Google Key found. Returning empty list.")
+        print("❌ DEBUG: No Google API Key found in .env")
         return []
 
-    params = {
-        "location": f"{lat},{lon}",
-        "radius": radius,
-        "keyword": keyword,
-        "key": API_KEY
+    # 1. SETUP HEADERS (Required for New API)
+    headers = {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": API_KEY,
+        # We must specify exactly which fields we want to reduce cost & latency
+        "X-Goog-FieldMask": "places.displayName,places.location,places.rating,places.priceLevel"
     }
 
+    # 2. SETUP BODY (JSON Request)
+    payload = {
+        "textQuery": keyword,
+        "locationBias": {
+            "circle": {
+                "center": {
+                    "latitude": lat,
+                    "longitude": lon
+                },
+                "radius": float(radius)
+            }
+        }
+    }
+
+    print(f"🔎 DEBUG: Searching Google (New API) for '{keyword}' at {lat},{lon}...")
+
     try:
-        response = requests.get(BASE_URL, params=params)
+        # Note: The New API uses POST, not GET
+        response = requests.post(BASE_URL, json=payload, headers=headers)
         data = response.json()
-        results = data.get('results', [])
+        
+        # --- DEBUGGING ---
+        if response.status_code != 200:
+            print(f"❌ GOOGLE API ERROR: {response.status_code}")
+            print(f"⚠️ Details: {data}")
+            return []
+            
+        results = data.get('places', [])
+        print(f"✅ DEBUG: Google found {len(results)} raw results.")
         
         cleaned_places = []
         for place in results:
-            # 1. Get Coordinates of the venue
-            place_lat = place['geometry']['location']['lat']
-            place_lng = place['geometry']['location']['lng']
+            # Extract Location
+            loc = place.get('location', {})
+            place_lat = loc.get('latitude')
+            place_lng = loc.get('longitude')
             
-            # 2. Calculate Distance from User
-            dist_meters = haversine_distance(lat, lon, place_lat, place_lng)
+            # Extract Name (It's an object in New API)
+            name_obj = place.get('displayName', {})
+            name_text = name_obj.get('text', 'Unknown')
+
+            # Calculate Distance
+            dist_meters = 0
+            if place_lat and place_lng:
+                dist_meters = haversine_distance(lat, lon, place_lat, place_lng)
             
-            # 3. Extract other details
+            # Price Level mapping (New API uses strings like "PRICE_LEVEL_INEXPENSIVE")
+            # We map strings to 1-4 integers for your algorithm
+            price_enum = place.get('priceLevel', 'PRICE_LEVEL_UNSPECIFIED')
+            price_map = {
+                'PRICE_LEVEL_UNSPECIFIED': 2,
+                'PRICE_LEVEL_FREE': 0,
+                'PRICE_LEVEL_INEXPENSIVE': 1,
+                'PRICE_LEVEL_MODERATE': 2,
+                'PRICE_LEVEL_EXPENSIVE': 3,
+                'PRICE_LEVEL_VERY_EXPENSIVE': 4
+            }
+            price_int = price_map.get(price_enum, 2)
+
             cleaned_places.append({
-                "name": place.get('name'),
-                "rating": place.get('rating', 0), # Default to 0 if no rating
-                "price_level": place.get('price_level', 2), # Default to Moderate (2)
+                "name": name_text,
+                "rating": place.get('rating', 0),
+                "price_level": price_int,
                 "dist": dist_meters,
                 "type": keyword
             })
@@ -66,5 +112,5 @@ def search_places(lat: float, lon: float, keyword: str, radius: int):
         return cleaned_places
 
     except Exception as e:
-        print(f"Error fetching places: {e}")
+        print(f"❌ CRITICAL ERROR fetching places: {e}")
         return []
