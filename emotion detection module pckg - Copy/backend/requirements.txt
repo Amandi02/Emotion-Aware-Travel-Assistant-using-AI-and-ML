@@ -1,0 +1,18 @@
+# FastAPI backend for emotion detection (videos)
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.6
+
+# Emotion model (same as your notebook)
+transformers>=4.36.0
+torch>=2.0.0
+opencv-python-headless>=4.8.0
+Pillow>=10.0.0
+numpy>=1.24.0
+
+# MongoDB
+pymongo>=4.6.0
+motor>=3.3.0
+
+# Env and validation
+pydantic-settings>=2.0.0

@@ -1,0 +1,21 @@
+{
+  "expo": {
+    "name": "Feelio",
+    "slug": "feelio",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "scheme": "feelio",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.feelio.app"
+    },
+    "android": {
+      "backgroundColor": "#0f0f12",
+      "package": "com.feelio.app"
+    },
+    "plugins": [
+      "expo-web-browser"
+    ]
+  }
+}

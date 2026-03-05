@@ -1,0 +1,6 @@
+Follow these instructions:
+ 
+1. first read the training guide to create the model 
+2. model is already there if you don't want to create again you can use that (**must use folder path when it ask for model path containing 3 files inside it**)
+3. you can try load notebook after model creation (**if you don't nee to create model again you can directly start from load notebook from colab or Jupiter notebbok**)
+4. live video framing and analysis is already in the load notebook refer it before start so you can set configurations according to your running environment (**live work in Jupiter or any local one only not in colab - if need colab there is a option you can save and see the video**)

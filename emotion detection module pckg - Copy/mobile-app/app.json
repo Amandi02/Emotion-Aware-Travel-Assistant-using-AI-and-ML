@@ -1,0 +1,40 @@
+{
+  "expo": {
+    "name": "Emotion Detection",
+    "slug": "emotion-detection-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": false,
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1a1a2e"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "We need access to pick a video for emotion analysis.",
+        "NSCameraUsageDescription": "We need camera access to record video for emotion analysis."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#1a1a2e"
+      },
+      "permissions": ["android.permission.READ_EXTERNAL_STORAGE", "android.permission.CAMERA"]
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow access to pick a video for emotion analysis.",
+          "cameraPermission": "Allow access to record video for emotion analysis."
+        }
+      ]
+    ]
+  }
+}
