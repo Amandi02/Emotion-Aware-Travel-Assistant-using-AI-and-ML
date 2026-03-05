@@ -1,30 +1,33 @@
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, Image, StyleSheet, ActivityIndicator } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { COLORS } from './theme';
 
 // ── Auth screens ──────────────────────────────────────────────────────────────
-import HomeScreen    from './screens/HomeScreen';
-import LoginScreen   from './screens/LoginScreen';
-import SignupScreen  from './screens/SignupScreen';
+import HomeScreen from './screens/HomeScreen';
+import LoginScreen from './screens/LoginScreen';
+import SignupScreen from './screens/SignupScreen';
 
 // ── Main app screens ──────────────────────────────────────────────────────────
-import DashboardScreen   from './screens/DashboardScreen';
+import DashboardScreen from './screens/DashboardScreen';
 import EmotionScanScreen from './screens/EmotionScanScreen';
-import PlacesScreen      from './screens/PlacesScreen';
+import PlacesScreen from './screens/PlacesScreen';
 import PlaceDetailScreen from './screens/PlaceDetailScreen';
-import PointsScreen      from './screens/PointsScreen';
-import DonateScreen      from './screens/DonateScreen';
+import PointsScreen from './screens/PointsScreen';
+import DonateScreen from './screens/DonateScreen';
 
 const Stack = createNativeStackNavigator();
 
 const sharedScreenOptions = {
-  headerStyle:      { backgroundColor: '#1a1a1f' },
-  headerTintColor:  '#f0f0f2',
-  headerTitleStyle: { fontWeight: '600' },
-  contentStyle:     { backgroundColor: '#0f0f12' },
+  headerStyle: { backgroundColor: COLORS.white },
+  headerTintColor: COLORS.slate900,
+  headerTitleStyle: { fontWeight: '800', color: COLORS.slate900, fontSize: 18 },
+  contentStyle: { backgroundColor: COLORS.white },
+  headerShadowVisible: false,
+  headerBackTitleVisible: false,
 };
 
 function AppNavigator() {
@@ -33,7 +36,12 @@ function AppNavigator() {
   if (loading) {
     return (
       <View style={styles.loading}>
-        <ActivityIndicator size="large" color="#6366f1" />
+        <Image
+          source={require('./assets/feelio.jpeg')}
+          style={styles.loadingLogo}
+          resizeMode="contain"
+        />
+        <ActivityIndicator size="large" color={COLORS.primary} style={styles.loadingSpinner} />
       </View>
     );
   }
@@ -41,25 +49,25 @@ function AppNavigator() {
   return (
     <Stack.Navigator screenOptions={sharedScreenOptions}>
       {/* ── Public ─────────────────────────────────────────────────────────── */}
-      <Stack.Screen name="Home"   component={HomeScreen}   options={{ title: 'Feelio' }} />
-      <Stack.Screen name="Login"  component={LoginScreen} />
-      <Stack.Screen name="Signup" component={SignupScreen} />
+      <Stack.Screen name="Home" component={HomeScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="Login" component={LoginScreen} options={{ title: '' }} />
+      <Stack.Screen name="Signup" component={SignupScreen} options={{ title: '' }} />
 
       {/* ── Authenticated ──────────────────────────────────────────────────── */}
       <Stack.Screen
         name="Dashboard"
         component={DashboardScreen}
-        options={{ title: 'Dashboard', headerBackVisible: false }}
+        options={{ headerShown: false }}
       />
       <Stack.Screen
         name="EmotionScan"
         component={EmotionScanScreen}
-        options={{ title: 'Emotion Scan' }}
+        options={{ headerShown: false }}
       />
       <Stack.Screen
         name="Places"
         component={PlacesScreen}
-        options={{ title: 'Nearby Places' }}
+        options={{ headerShown: false }}
       />
       <Stack.Screen
         name="PlaceDetail"
@@ -81,7 +89,21 @@ function AppNavigator() {
 }
 
 const styles = StyleSheet.create({
-  loading: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0f0f12' },
+  loading: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: COLORS.bg,
+  },
+  loadingLogo: {
+    width: 120,
+    height: 120,
+    borderRadius: 24,
+    marginBottom: 24,
+  },
+  loadingSpinner: {
+    marginTop: 16,
+  },
 });
 
 export default function App() {
@@ -90,7 +112,7 @@ export default function App() {
       <AuthProvider>
         <NavigationContainer>
           <AppNavigator />
-          <StatusBar style="light" />
+          <StatusBar style="dark" backgroundColor={COLORS.bg} />
         </NavigationContainer>
       </AuthProvider>
     </SafeAreaProvider>

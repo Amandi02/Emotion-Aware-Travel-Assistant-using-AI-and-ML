@@ -1,40 +1,28 @@
 /**
- * DonateScreen
- *
- * Full in-app Stripe payment flow:
- *  1. User picks charity + enters points
- *  2. App calls backend to create a Stripe PaymentIntent (clientSecret)
- *  3. A bottom-sheet modal renders a Stripe Payment Element form inside a WebView
- *     (Stripe.js loads from CDN, card details never touch our servers)
- *  4. On success, app calls /api/donations/confirm to deduct points instantly
- *  5. History tab shows all past donations
+ * DonateScreen - Modern Premium Theme
  */
 
 import { useCallback, useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
   TextInput, ScrollView, Alert, ActivityIndicator,
-  Modal, SafeAreaView, Platform, FlatList,
+  Modal, SafeAreaView, FlatList,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { useFocusEffect } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
 import { api } from '../api';
-
-// ─── Constants ────────────────────────────────────────────────────────────────
+import { COLORS, SHADOW, RADIUS, SPACING } from '../theme';
 
 const CHARITIES = [
-  { id: 'one_tree_planted', name: 'One Tree Planted 🌳' },
-  { id: 'cool_earth',       name: 'Cool Earth 🌿' },
-  { id: 'rainforest_trust', name: 'Rainforest Trust 🐾' },
-  { id: 'carbon_fund',      name: 'Carbon Fund ♻️' },
+  { id: 'one_tree_planted', name: 'One Tree Planted', icon: 'leaf' },
+  { id: 'cool_earth', name: 'Cool Earth', icon: 'planet' },
+  { id: 'rainforest_trust', name: 'Rainforest Trust', icon: 'paw' },
+  { id: 'carbon_fund', name: 'Carbon Fund', icon: 'sync' },
 ];
 
 const POINTS_PER_DOLLAR = 100;
-const MIN_POINTS        = 100;
-
-// ─── Stripe Payment Form HTML ─────────────────────────────────────────────────
-// Rendered inside a WebView using the classic Stripe Card Element.
-// Uses confirmCardPayment() — NEVER redirects, stays fully in-app.
+const MIN_POINTS = 100;
 
 function buildPaymentHtml({ clientSecret, publishableKey, amountCents, charityName }) {
   const dollars = (amountCents / 100).toFixed(2);
@@ -47,235 +35,76 @@ function buildPaymentHtml({ clientSecret, publishableKey, amountCents, charityNa
   <script src="https://js.stripe.com/v3/"></script>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
-    html,body{height:100%;background:#0f0f12}
-    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
-      color:#f0f0f2;padding:24px 18px 40px}
-
-    /* ── Header ───────────────────────────────────────────────────── */
-    .hdr{text-align:center;margin-bottom:22px}
-    .hdr-emoji{font-size:38px}
-    .hdr h1{font-size:20px;font-weight:700;margin-top:6px}
-    .hdr p{color:#8a8a94;font-size:12px;margin-top:3px}
-
-    /* ── Amount card ──────────────────────────────────────────────── */
-    .amount-card{background:#0f2a26;border:1px solid #2dd4bf44;
-      border-radius:14px;padding:16px;text-align:center;margin-bottom:24px}
-    .amount-val{color:#2dd4bf;font-size:36px;font-weight:800;line-height:1}
-    .amount-sub{color:#8a8a94;font-size:12px;margin-top:4px}
-    .charity-pill{display:inline-block;background:#1a1a2f;border:1px solid #6366f133;
-      border-radius:20px;padding:4px 14px;font-size:12px;color:#a5b4fc;margin-top:10px}
-
-    /* ── Card fields ──────────────────────────────────────────────── */
-    .field-label{color:#a0a0aa;font-size:11px;font-weight:600;letter-spacing:.6px;
-      text-transform:uppercase;margin-bottom:7px}
-    .card-row{background:#1a1a1f;border:1px solid #2a2a32;border-radius:10px;
-      padding:14px;margin-bottom:14px;transition:border-color .2s}
-    .card-row.focused{border-color:#2dd4bf}
-    /* Stripe mounts its iframe into #card-number-el etc. */
-    .card-number-wrap{margin-bottom:14px}
-    .card-expiry-cvv{display:flex;gap:12px}
-    .card-expiry-cvv .card-row{flex:1;margin-bottom:0}
-
-    /* ── Error ────────────────────────────────────────────────────── */
-    #error-box{display:none;background:#2a1a1a;border:1px solid #f8717155;
-      border-radius:8px;padding:12px 14px;color:#f87171;font-size:13px;
-      margin-bottom:14px;line-height:1.5}
-
-    /* ── Pay button ───────────────────────────────────────────────── */
-    #pay-btn{width:100%;background:#2dd4bf;color:#0f0f12;border:none;
-      border-radius:12px;padding:16px;font-size:16px;font-weight:700;
-      cursor:pointer;margin-top:4px;
-      display:flex;align-items:center;justify-content:center;gap:8px;
-      transition:background .2s}
-    #pay-btn:disabled{background:#2a2a32;color:#555;cursor:not-allowed}
-    .spinner{width:18px;height:18px;border:2.5px solid #0f0f12;
-      border-top-color:transparent;border-radius:50%;
-      animation:spin .7s linear infinite}
-    @keyframes spin{to{transform:rotate(360deg)}}
-
-    /* ── Test-card hint ───────────────────────────────────────────── */
-    .hint{color:#555;font-size:11px;text-align:center;margin-top:14px;line-height:1.7}
-    .hint b{color:#8a8a94}
-
-    /* ── Success state ────────────────────────────────────────────── */
-    #success-wrap{display:none;text-align:center;padding-top:48px}
-    #success-wrap .s-emoji{font-size:60px}
-    #success-wrap h2{font-size:22px;font-weight:700;margin-top:14px}
-    #success-wrap p{color:#8a8a94;font-size:14px;margin-top:8px;line-height:1.6}
-    .s-badge{display:inline-block;background:#0f2a26;border:1px solid #2dd4bf44;
-      border-radius:12px;padding:10px 22px;margin-top:16px;color:#2dd4bf;
-      font-weight:700;font-size:14px}
+    html,body{height:100%;background:#FFFFFF}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#111827;padding:24px 20px}
+    .hdr{text-align:center;margin-bottom:32px}
+    .hdr h1{font-size:24px;font-weight:900;color:#111827}
+    .hdr p{color:#64748B;font-size:14px;margin-top:4px}
+    .card{background:#F8FAFC;border:1px solid #F1F5F9;border-radius:24px;padding:24px;margin-bottom:32px}
+    .amount{font-size:48px;font-weight:900;color:#10B981;text-align:center}
+    .target{font-size:14px;font-weight:700;color:#64748B;text-align:center;margin-top:8px;text-transform:uppercase;letter-spacing:1px}
+    #payment-form{margin-top:20px}
+    .field-label{font-size:12px;font-weight:800;color:#64748B;margin-bottom:8px;text-transform:uppercase;letter-spacing:1px}
+    .input-row{background:white;border:1px solid #E2E8F0;border-radius:16px;padding:16px;margin-bottom:16px;box-shadow:0 1px 2px rgba(0,0,0,0.05);transition:all 0.2s}
+    .input-row.focused{border-color:#10B981;box-shadow:0 0 0 4px rgba(16,185,129,0.1)}
+    #pay-btn{width:100%;background:#111827;color:white;border:none;border-radius:32px;padding:20px;font-size:18px;font-weight:800;cursor:pointer;margin-top:10px}
+    #pay-btn:disabled{background:#E2E8F0;color:#94A3B8}
+    #success-wrap{display:none;text-align:center;padding-top:40px}
+    #success-wrap h2{font-size:28px;font-weight:900;margin-top:20px}
+    #error-box{display:none;color:#EF4444;background:#FEF2F2;padding:12px;border-radius:12px;margin-bottom:16px;font-size:14px;font-weight:600}
   </style>
 </head>
 <body>
-
-<!-- ── Payment Form ─────────────────────────────────────────────────────────── -->
 <div id="form-wrap">
-
-  <div class="hdr">
-    <div class="hdr-emoji">💳</div>
-    <h1>Secure Payment</h1>
-    <p>Your card details are encrypted by Stripe</p>
-  </div>
-
-  <div class="amount-card">
-    <div class="amount-val">$${dollars}</div>
-    <div class="amount-sub">USD · one-time donation</div>
-    <div class="charity-pill">${charityName}</div>
-  </div>
-
+  <div class="hdr"><h1>Secure Checkout</h1><p>Powered by Stripe</p></div>
+  <div class="card"><div class="amount">$${dollars}</div><div class="target">Donation to ${charityName}</div></div>
   <div id="error-box"></div>
-
   <form id="payment-form">
-
-    <!-- Card number -->
-    <div class="field-label">Card Number</div>
-    <div class="card-row card-number-wrap" id="card-number-wrap">
-      <div id="card-number-el"></div>
-    </div>
-
-    <!-- Expiry + CVV side by side -->
-    <div class="card-expiry-cvv">
-      <div style="flex:1">
-        <div class="field-label">Expiry</div>
-        <div class="card-row" id="card-expiry-wrap">
-          <div id="card-expiry-el"></div>
-        </div>
-      </div>
-      <div style="flex:1">
-        <div class="field-label">CVV</div>
-        <div class="card-row" id="card-cvc-wrap">
-          <div id="card-cvc-el"></div>
-        </div>
-      </div>
-    </div>
-
-    <button type="submit" id="pay-btn" style="margin-top:20px">
-      <span id="btn-label">Pay $${dollars}</span>
-    </button>
-
+    <div class="field-label">Card Details</div>
+    <div class="input-row" id="card-wrap"><div id="card-el"></div></div>
+    <button type="submit" id="pay-btn">PAY $${dollars} NOW</button>
   </form>
-
-  <p class="hint">
-    Test: <b>4242 4242 4242 4242</b> &nbsp;·&nbsp; any future date &nbsp;·&nbsp; any CVV
-  </p>
 </div>
-
-<!-- ── Success Screen ──────────────────────────────────────────────────────── -->
-<div id="success-wrap">
-  <div class="s-emoji">🎉</div>
-  <h2>Donation Complete!</h2>
-  <p>Your payment was successful.<br>Your eco-points will be updated.</p>
-  <div class="s-badge">💚 Thank you for the planet!</div>
-</div>
-
+<div id="success-wrap"><h2>🎉 Thank You!</h2><p>Your contribution helps protect our planet.</p></div>
 <script>
-(function(){
-  /* ── Init Stripe with individual card elements (no redirect, no Link) ─── */
-  var stripe   = Stripe('${publishableKey}');
-  var elements = stripe.elements({
-    fonts: [{ cssSrc: 'https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap' }],
-  });
-
-  var cardStyle = {
-    base: {
-      color:           '#f0f0f2',
-      fontFamily:      '-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif',
-      fontSize:        '16px',
-      fontSmoothing:   'antialiased',
-      '::placeholder': { color: '#555' },
-    },
-    invalid: { color: '#f87171', iconColor: '#f87171' },
-  };
-
-  var cardNumberEl = elements.create('cardNumber', { style: cardStyle, showIcon: true });
-  var cardExpiryEl = elements.create('cardExpiry', { style: cardStyle });
-  var cardCvcEl    = elements.create('cardCvc',    { style: cardStyle });
-
-  cardNumberEl.mount('#card-number-el');
-  cardExpiryEl.mount('#card-expiry-el');
-  cardCvcEl.mount('#card-cvc-el');
-
-  /* Focus styling */
-  [
-    { el: cardNumberEl, wrap: 'card-number-wrap' },
-    { el: cardExpiryEl, wrap: 'card-expiry-wrap' },
-    { el: cardCvcEl,    wrap: 'card-cvc-wrap'    },
-  ].forEach(function(item) {
-    item.el.on('focus', function() {
-      document.getElementById(item.wrap).classList.add('focused');
-    });
-    item.el.on('blur', function() {
-      document.getElementById(item.wrap).classList.remove('focused');
-    });
-  });
-
-  /* ── Form submit ─────────────────────────────────────────────────────── */
-  var form    = document.getElementById('payment-form');
-  var btn     = document.getElementById('pay-btn');
-  var errorEl = document.getElementById('error-box');
-
-  function setLoading(on) {
-    btn.disabled = on;
-    document.getElementById('btn-label').innerHTML = on
-      ? '<div class="spinner"></div>'
-      : 'Pay \$${dollars}';
-  }
-
-  form.addEventListener('submit', async function(e) {
+  var stripe = Stripe('${publishableKey}');
+  var elements = stripe.elements();
+  var card = elements.create('card', { style: { base: { fontSize: '16px', fontFamily: '-apple-system, sans-serif' }}});
+  card.mount('#card-el');
+  card.on('focus', function(){ document.getElementById('card-wrap').classList.add('focused') });
+  card.on('blur', function(){ document.getElementById('card-wrap').classList.remove('focused') });
+  document.getElementById('payment-form').addEventListener('submit', async function(e){
     e.preventDefault();
-    setLoading(true);
-    errorEl.style.display = 'none';
-
-    /* confirmCardPayment — card only, zero redirects */
-    var result = await stripe.confirmCardPayment('${clientSecret}', {
-      payment_method: { card: cardNumberEl },
-    });
-
-    if (result.error) {
-      errorEl.textContent = result.error.message;
-      errorEl.style.display = 'block';
-      setLoading(false);
-    } else if (result.paymentIntent && result.paymentIntent.status === 'succeeded') {
-      document.getElementById('form-wrap').style.display    = 'none';
-      document.getElementById('success-wrap').style.display = 'block';
-      /* Notify React Native app */
-      if (window.ReactNativeWebView) {
-        window.ReactNativeWebView.postMessage(JSON.stringify({
-          type:            'payment_success',
-          paymentIntentId: result.paymentIntent.id,
-        }));
-      }
+    document.getElementById('pay-btn').disabled = true;
+    var res = await stripe.confirmCardPayment('${clientSecret}', { payment_method: { card: card }});
+    if(res.error){
+      document.getElementById('error-box').textContent = res.error.message;
+      document.getElementById('error-box').style.display = 'block';
+      document.getElementById('pay-btn').disabled = false;
     } else {
-      setLoading(false);
-      errorEl.textContent = 'Unexpected state — please try again.';
-      errorEl.style.display = 'block';
+      document.getElementById('form-wrap').style.display = 'none';
+      document.getElementById('success-wrap').style.display = 'block';
+      window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'payment_success', paymentIntentId: res.paymentIntent.id }));
     }
   });
-})();
 </script>
 </body>
 </html>`;
 }
 
-// ─── Screen ───────────────────────────────────────────────────────────────────
-
 export default function DonateScreen({ navigation }) {
-  const [balance, setBalance]               = useState(0);
-  const [pointsInput, setPointsInput]       = useState('');
-  const [selectedCharity, setSelected]     = useState(CHARITIES[0].id);
+  const [balance, setBalance] = useState(0);
+  const [pointsInput, setPointsInput] = useState('');
+  const [selectedCharity, setSelected] = useState(CHARITIES[0].id);
   const [loadingBalance, setLoadingBalance] = useState(true);
-  const [loadingIntent, setLoadingIntent]   = useState(false);
-  const [history, setHistory]               = useState([]);
-  const [tab, setTab]                       = useState('donate');
+  const [loadingIntent, setLoadingIntent] = useState(false);
+  const [history, setHistory] = useState([]);
+  const [tab, setTab] = useState('donate');
 
-  // Payment modal state
-  const [modalVisible, setModalVisible]     = useState(false);
-  const [paymentHtml, setPaymentHtml]       = useState('');
-  const [pendingIntent, setPendingIntent]   = useState(null); // { id, points, charityId }
-  const [confirmingPayment, setConfirming]  = useState(false);
-
-  // ── Data fetching ───────────────────────────────────────────────────────────
+  const [modalVisible, setModalVisible] = useState(false);
+  const [paymentHtml, setPaymentHtml] = useState('');
+  const [pendingIntent, setPendingIntent] = useState(null);
+  const [confirmingPayment, setConfirming] = useState(false);
 
   const fetchData = async () => {
     setLoadingBalance(true);
@@ -297,463 +126,249 @@ export default function DonateScreen({ navigation }) {
 
   useFocusEffect(useCallback(() => { fetchData(); }, []));
 
-  // ── Derived values ──────────────────────────────────────────────────────────
-
-  const points      = parseInt(pointsInput || '0', 10);
+  const points = parseInt(pointsInput || '0', 10);
   const dollarAmount = (points / POINTS_PER_DOLLAR).toFixed(2);
-  const isValid     = points >= MIN_POINTS && points <= balance;
-
-  // ── Open in-app payment form ────────────────────────────────────────────────
+  const isValid = points >= MIN_POINTS && points <= balance;
 
   const handleOpenPaymentForm = async () => {
-    if (!isValid) {
-      if (balance < MIN_POINTS) {
-        Alert.alert(
-          'Not enough points',
-          `You need at least ${MIN_POINTS} eco-points to donate.\n\nVisit low-emission places to earn points!`,
-          [
-            { text: '😊 Scan Emotion', onPress: () => navigation.navigate('EmotionScan') },
-            { text: 'OK' },
-          ]
-        );
-      }
-      return;
-    }
-
+    if (!isValid) return;
     setLoadingIntent(true);
     try {
       const { data } = await api.post('/donations/create-payment-intent', {
         pointsToConvert: points,
-        charityId:       selectedCharity,
-      });
-
-      const html = buildPaymentHtml({
-        clientSecret:   data.clientSecret,
-        publishableKey: data.publishableKey,
-        amountCents:    data.amount,
-        charityName:    data.charityName,
-      });
-
-      setPendingIntent({
-        id:       data.paymentIntentId,
-        points,
         charityId: selectedCharity,
       });
+      const html = buildPaymentHtml({
+        clientSecret: data.clientSecret,
+        publishableKey: data.publishableKey,
+        amountCents: data.amount,
+        charityName: data.charityName,
+      });
+      setPendingIntent({ id: data.paymentIntentId, points, charityId: selectedCharity });
       setPaymentHtml(html);
       setModalVisible(true);
     } catch (err) {
-      Alert.alert('Error', err?.response?.data?.message || err.message || 'Could not create payment session.');
+      Alert.alert('Error', err.message || 'Payment initiation failed.');
     } finally {
       setLoadingIntent(false);
     }
   };
 
-  // ── Handle message from WebView (Stripe success) ────────────────────────────
-
   const handleWebViewMessage = async (event) => {
     let msg;
     try { msg = JSON.parse(event.nativeEvent.data); } catch { return; }
-
     if (msg.type === 'payment_success') {
       setConfirming(true);
       try {
-        const { data } = await api.post('/donations/confirm', {
+        await api.post('/donations/confirm', {
           paymentIntentId: msg.paymentIntentId,
           pointsToConvert: pendingIntent.points,
-          charityId:       pendingIntent.charityId,
+          charityId: pendingIntent.charityId,
         });
-
-        // Let the in-app success animation show for 1.5s then close
         setTimeout(async () => {
           setModalVisible(false);
-          setPaymentHtml('');
-          setPendingIntent(null);
           setPointsInput('');
           await fetchData();
-          Alert.alert(
-            '💚 Donation Complete!',
-            data.message || 'Thank you for making the planet greener!',
-            [{ text: 'OK' }]
-          );
+          Alert.alert('💚 Success', 'Thank you for your contribution!');
         }, 1500);
-      } catch (err) {
+      } catch {
         setModalVisible(false);
-        Alert.alert(
-          'Payment recorded',
-          'Your payment went through! Points will be updated shortly.',
-          [{ text: 'OK', onPress: () => fetchData() }]
-        );
       } finally {
         setConfirming(false);
       }
     }
   };
 
-  // ── Loading screen ──────────────────────────────────────────────────────────
-
-  if (loadingBalance) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color="#2dd4bf" />
-      </View>
-    );
-  }
-
-  // ── Render ──────────────────────────────────────────────────────────────────
+  if (loadingBalance) return <View style={styles.center}><ActivityIndicator size="large" color={COLORS.primary} /></View>;
 
   return (
     <View style={styles.root}>
+      {/* ── Custom Header ─────────────────────────────────────────── */}
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+          <Ionicons name="chevron-back" size={24} color={COLORS.slate800} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Donate Impact</Text>
+        <View style={{ width: 44 }} />
+      </View>
 
-      {/* ── Tab bar ────────────────────────────────────────────────────────── */}
-      <View style={styles.tabBar}>
-        <TouchableOpacity
-          style={[styles.tab, tab === 'donate' && styles.tabActive]}
-          onPress={() => setTab('donate')}
-        >
-          <Text style={[styles.tabText, tab === 'donate' && styles.tabTextActive]}>Donate</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tab, tab === 'history' && styles.tabActive]}
-          onPress={() => setTab('history')}
-        >
-          <Text style={[styles.tabText, tab === 'history' && styles.tabTextActive]}>
-            History {history.length > 0 ? `(${history.length})` : ''}
-          </Text>
-        </TouchableOpacity>
+      {/* ── Tabs ─────────────────────────────────────────────────── */}
+      <View style={styles.tabContainer}>
+        {['donate', 'history'].map((t) => (
+          <TouchableOpacity
+            key={t}
+            style={[styles.tabBtn, tab === t && styles.tabBtnActive]}
+            onPress={() => setTab(t)}
+          >
+            <Ionicons name={t === 'donate' ? 'heart' : 'list'} size={20} color={tab === t ? COLORS.white : COLORS.slate400} />
+            <Text style={[styles.tabLabel, tab === t && styles.tabLabelActive]}>
+              {t.toUpperCase()}
+            </Text>
+          </TouchableOpacity>
+        ))}
       </View>
 
       {tab === 'donate' ? (
-        /* ── DONATE TAB ────────────────────────────────────────────────────── */
-        <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 48 }}>
-          <Text style={styles.title}>Donate to Charity</Text>
-          <Text style={styles.subtitle}>
-            Convert eco-points → USD → real donation, all inside the app
-          </Text>
-
-          {/* Balance card */}
-          <View style={styles.balanceCard}>
-            <Text style={styles.balLabel}>Your Eco-Points</Text>
-            <Text style={styles.balValue}>{balance.toLocaleString()}</Text>
-            <Text style={styles.balSub}>= ${(balance / POINTS_PER_DOLLAR).toFixed(2)} USD available</Text>
-            {balance < MIN_POINTS && (
-              <Text style={styles.balWarning}>
-                ⚠️ Earn {MIN_POINTS - balance} more pts to unlock donations
-              </Text>
-            )}
+        <ScrollView style={styles.container} contentContainerStyle={{ padding: 24, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+          <View style={styles.balanceSummary}>
+            <Ionicons name="leaf" size={24} color={COLORS.primary} />
+            <Text style={styles.balanceValue}>{balance.toLocaleString()} Pts</Text>
+            <Text style={styles.balanceSub}>Available for conversion</Text>
           </View>
 
-          {/* Points input */}
-          <Text style={styles.fieldLabel}>Points to donate  (min {MIN_POINTS})</Text>
-          <TextInput
-            style={[styles.input, !isValid && points > 0 && styles.inputError]}
-            value={pointsInput}
-            onChangeText={setPointsInput}
-            keyboardType="numeric"
-            placeholder={`e.g. 100  (= $1.00)`}
-            placeholderTextColor="#444"
-          />
-          {points > balance && balance > 0 && (
-            <Text style={styles.validationMsg}>⚠️ You only have {balance} points</Text>
-          )}
-          {points > 0 && points < MIN_POINTS && (
-            <Text style={styles.validationMsg}>⚠️ Minimum is {MIN_POINTS} points</Text>
-          )}
-
-          {/* Conversion preview */}
-          {isValid && (
-            <View style={styles.conversionRow}>
-              <Text style={styles.conversionText}>
-                {points} pts  →  <Text style={styles.conversionHighlight}>${dollarAmount} USD</Text>
-              </Text>
-              <Text style={styles.conversionRate}>100 pts = $1.00</Text>
+          <View style={styles.inputCard}>
+            <Text style={styles.fieldLabel}>POINTS TO CONVERT</Text>
+            <TextInput
+              style={styles.input}
+              value={pointsInput}
+              onChangeText={setPointsInput}
+              keyboardType="numeric"
+              placeholder="0"
+            />
+            <View style={styles.convRow}>
+              <Text style={styles.convText}>USD Estimation:</Text>
+              <Text style={styles.convValue}>${dollarAmount}</Text>
             </View>
-          )}
+          </View>
 
-          {/* Charity selector */}
-          <Text style={styles.fieldLabel}>Choose a charity</Text>
+          <Text style={styles.fieldLabel}>CHOOSE RECIPIENT</Text>
           {CHARITIES.map((c) => (
             <TouchableOpacity
               key={c.id}
-              style={[styles.charityOption, selectedCharity === c.id && styles.charitySelected]}
+              style={[styles.charityCard, selectedCharity === c.id && styles.charityCardActive]}
               onPress={() => setSelected(c.id)}
             >
-              <Text style={[styles.charityText, selectedCharity === c.id && styles.charityTextSelected]}>
-                {c.name}
-              </Text>
-              {selectedCharity === c.id && <Text style={styles.checkmark}>✓</Text>}
+              <View style={[styles.charityIconWrap, { backgroundColor: selectedCharity === c.id ? COLORS.primary : COLORS.slate50 }]}>
+                <Ionicons name={c.icon} size={22} color={selectedCharity === c.id ? COLORS.white : COLORS.slate400} />
+              </View>
+              <Text style={[styles.charityName, selectedCharity === c.id && styles.charityNameActive]}>{c.name}</Text>
+              {selectedCharity === c.id && <Ionicons name="checkmark-circle" size={24} color={COLORS.primary} />}
             </TouchableOpacity>
           ))}
 
-          {/* Pay button */}
           <TouchableOpacity
-            style={[styles.donateBtn, (!isValid || loadingIntent) && styles.donateBtnDisabled]}
+            style={[styles.payBtn, !isValid && styles.payBtnDisabled]}
             onPress={handleOpenPaymentForm}
-            disabled={loadingIntent}
+            disabled={loadingIntent || !isValid}
           >
             {loadingIntent ? (
-              <ActivityIndicator color="#0f0f12" />
+              <ActivityIndicator color={COLORS.white} />
             ) : (
-              <Text style={styles.donateBtnText}>
-                {isValid
-                  ? `💳  Pay $${dollarAmount} via Stripe`
-                  : balance < MIN_POINTS
-                    ? `Need ${MIN_POINTS - balance} more points`
-                    : 'Enter a valid amount'}
-              </Text>
+              <View style={styles.btnRow}>
+                <Ionicons name="shield-checkmark" size={22} color={COLORS.white} />
+                <Text style={styles.payBtnText}>SECURE DONATION</Text>
+              </View>
             )}
           </TouchableOpacity>
-
-          {/* Earn-points shortcut */}
-          {balance < MIN_POINTS && (
-            <TouchableOpacity
-              style={styles.earnBtn}
-              onPress={() => navigation.navigate('EmotionScan')}
-            >
-              <Text style={styles.earnBtnText}>😊  Scan Emotion → Find Eco Places → Earn Points</Text>
-            </TouchableOpacity>
-          )}
-
-          <Text style={styles.disclaimer}>
-            Card details are handled directly by Stripe.{'\n'}
-            We never store your card information.{'\n'}
-            Points are deducted only after successful payment.
-          </Text>
         </ScrollView>
       ) : (
-        /* ── HISTORY TAB ───────────────────────────────────────────────────── */
         <FlatList
-          style={styles.container}
-          contentContainerStyle={{ paddingBottom: 48 }}
           data={history}
           keyExtractor={(_, i) => String(i)}
-          ListHeaderComponent={
-            <Text style={[styles.title, { marginBottom: 16 }]}>Donation History</Text>
-          }
+          contentContainerStyle={{ padding: 24 }}
           renderItem={({ item }) => (
             <View style={styles.histItem}>
               <View style={styles.histLeft}>
-                <Text style={styles.histCharity}>{item.charityName || item.charityId}</Text>
-                <Text style={styles.histDate}>
-                  {new Date(item.createdAt).toLocaleDateString(undefined, {
-                    year: 'numeric', month: 'short', day: 'numeric',
-                  })}
-                </Text>
-                <View style={[
-                  styles.histStatusBox,
-                  { backgroundColor: item.status === 'completed' ? '#0f2a1a' : '#2a1a0f' },
-                ]}>
-                  <Text style={[
-                    styles.histStatusText,
-                    { color: item.status === 'completed' ? '#4ade80' : '#fb923c' },
-                  ]}>
-                    {item.status === 'completed' ? '✅ Completed' : `⏳ ${item.status}`}
-                  </Text>
-                </View>
+                <Text style={styles.histName}>{item.charityName || 'Global Support'}</Text>
+                <Text style={styles.histDate}>{new Date(item.createdAt).toLocaleDateString()}</Text>
               </View>
               <View style={styles.histRight}>
-                <Text style={styles.histDollar}>
-                  ${(item.amountCents / 100).toFixed(2)}
-                </Text>
-                <Text style={styles.histPoints}>−{item.pointsUsed} pts</Text>
+                <Text style={styles.histAmt}>${(item.amountCents / 100).toFixed(2)}</Text>
+                <Text style={styles.histPts}>-{item.pointsUsed} pts</Text>
               </View>
             </View>
           )}
           ListEmptyComponent={
-            <View style={styles.emptyBox}>
-              <Text style={styles.emptyEmoji}>💚</Text>
-              <Text style={styles.emptyTitle}>No donations yet</Text>
-              <Text style={styles.emptySubText}>
-                Earn eco-points by visiting low-emission places, then make your first donation!
-              </Text>
+            <View style={styles.emptyContainer}>
+              <Ionicons name="heart-outline" size={80} color={COLORS.slate100} />
+              <Text style={styles.emptyTitle}>No past donations</Text>
+              <Text style={styles.emptySub}>Your green contributions will appear here.</Text>
             </View>
           }
         />
       )}
 
-      {/* ── Stripe Payment Modal ──────────────────────────────────────────────── */}
-      <Modal
-        visible={modalVisible}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={() => {
-          if (!confirmingPayment) {
-            setModalVisible(false);
-            setPaymentHtml('');
-            setPendingIntent(null);
-          }
-        }}
-      >
-        <SafeAreaView style={styles.modalRoot}>
-          {/* Modal header */}
+      {/* ── Stripe Modal ────────────────────────────────────────── */}
+      <Modal visible={modalVisible} animationType="slide" presentationStyle="pageSheet">
+        <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.white }}>
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Secure Payment</Text>
-            <TouchableOpacity
-              onPress={() => {
-                if (!confirmingPayment) {
-                  setModalVisible(false);
-                  setPaymentHtml('');
-                  setPendingIntent(null);
-                }
-              }}
-              disabled={confirmingPayment}
-            >
-              <Text style={[styles.modalClose, confirmingPayment && { opacity: 0.3 }]}>✕</Text>
+            <Text style={styles.modalTitle}>Stripe Checkout</Text>
+            <TouchableOpacity onPress={() => setModalVisible(false)} disabled={confirmingPayment}>
+              <Ionicons name="close" size={28} color={COLORS.slate400} />
             </TouchableOpacity>
           </View>
-
-          {/* Stripe badge */}
-          <View style={styles.stripeBadge}>
-            <Text style={styles.stripeBadgeText}>🔒  Powered by Stripe  ·  PCI compliant</Text>
-          </View>
-
-          {/* WebView with Stripe Payment Element */}
           {paymentHtml ? (
             <WebView
-              style={styles.webview}
+              style={{ flex: 1 }}
               source={{ html: paymentHtml }}
               onMessage={handleWebViewMessage}
               javaScriptEnabled
-              domStorageEnabled
-              originWhitelist={['*']}
-              // Allow Stripe.js to load from CDN
-              mixedContentMode="always"
-              // Prevent zooming
-              scalesPageToFit={false}
-              // Important: allow keyboard to push up the webview
-              keyboardDisplayRequiresUserAction={false}
-              automaticallyAdjustContentInsets={false}
-              contentInset={{ top: 0, right: 0, bottom: 0, left: 0 }}
             />
           ) : (
-            <View style={styles.center}>
-              <ActivityIndicator size="large" color="#2dd4bf" />
-            </View>
+            <ActivityIndicator style={{ marginTop: 100 }} color={COLORS.primary} />
           )}
-
-          {/* Confirming overlay */}
           {confirmingPayment && (
-            <View style={styles.confirmOverlay}>
-              <ActivityIndicator size="large" color="#2dd4bf" />
-              <Text style={styles.confirmText}>Confirming your donation…</Text>
+            <View style={styles.overlay}>
+              <ActivityIndicator size="large" color={COLORS.primary} />
+              <Text style={styles.overlayText}>Finalizing Donation...</Text>
             </View>
           )}
         </SafeAreaView>
       </Modal>
-
     </View>
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
-
 const styles = StyleSheet.create({
-  root:    { flex: 1, backgroundColor: '#0f0f12' },
-  container: { flex: 1, padding: 20 },
-  center:  { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#0f0f12' },
+  root: { flex: 1, backgroundColor: COLORS.white },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  header: { paddingTop: 60, paddingHorizontal: 24, paddingBottom: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  backBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: COLORS.slate50, justifyContent: 'center', alignItems: 'center' },
+  headerTitle: { fontSize: 20, fontWeight: '900', color: COLORS.slate900 },
 
-  // Tabs
-  tabBar:        { flexDirection: 'row', backgroundColor: '#1a1a1f', borderBottomWidth: 1, borderBottomColor: '#2a2a32' },
-  tab:           { flex: 1, paddingVertical: 13, alignItems: 'center' },
-  tabActive:     { borderBottomWidth: 2, borderBottomColor: '#2dd4bf' },
-  tabText:       { color: '#8a8a94', fontSize: 14, fontWeight: '600' },
-  tabTextActive: { color: '#2dd4bf' },
+  tabContainer: { flexDirection: 'row', backgroundColor: COLORS.slate50, marginHorizontal: 24, borderRadius: 24, padding: 6, marginBottom: 10 },
+  tabBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12, borderRadius: 20 },
+  tabBtnActive: { backgroundColor: COLORS.slate900, ...SHADOW },
+  tabLabel: { fontSize: 13, fontWeight: '800', color: COLORS.slate400 },
+  tabLabelActive: { color: COLORS.white },
 
-  // Header
-  title:    { fontSize: 22, fontWeight: '700', color: '#f0f0f2', marginBottom: 4, marginTop: 4 },
-  subtitle: { fontSize: 13, color: '#8a8a94', marginBottom: 20, lineHeight: 18 },
+  container: { flex: 1 },
+  balanceSummary: { alignItems: 'center', marginVertical: 32 },
+  balanceValue: { fontSize: 40, fontWeight: '900', color: COLORS.slate900, marginTop: 12 },
+  balanceSub: { fontSize: 14, fontWeight: '600', color: COLORS.slate400, marginTop: 4 },
 
-  // Balance card
-  balanceCard: {
-    backgroundColor: '#0f2a26', borderRadius: 14, padding: 20,
-    alignItems: 'center', borderWidth: 1, borderColor: '#2dd4bf33', marginBottom: 24,
-  },
-  balLabel:   { color: '#8a8a94', fontSize: 11, letterSpacing: 1.2, textTransform: 'uppercase' },
-  balValue:   { color: '#2dd4bf', fontSize: 40, fontWeight: '800', marginTop: 4 },
-  balSub:     { color: '#8a8a94', fontSize: 13, marginTop: 4 },
-  balWarning: { color: '#facc15', fontSize: 12, marginTop: 10, textAlign: 'center', lineHeight: 18 },
+  inputCard: { backgroundColor: COLORS.primaryGhost, borderRadius: 32, padding: 24, marginBottom: 32 },
+  fieldLabel: { fontSize: 13, fontWeight: '800', color: COLORS.slate400, letterSpacing: 1.5, marginBottom: 16 },
+  input: { fontSize: 48, fontWeight: '900', color: COLORS.slate900, borderBottomWidth: 2, borderBottomColor: 'rgba(0,0,0,0.05)', paddingVertical: 8, marginBottom: 16 },
+  convRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  convText: { fontSize: 15, fontWeight: '600', color: COLORS.slate500 },
+  convValue: { fontSize: 22, fontWeight: '900', color: COLORS.primaryDeep },
 
-  // Form
-  fieldLabel:    { color: '#a0a0aa', fontSize: 12, marginBottom: 8, fontWeight: '600', letterSpacing: 0.5, textTransform: 'uppercase' },
-  input: {
-    backgroundColor: '#1a1a1f', borderWidth: 1, borderColor: '#2a2a32',
-    borderRadius: 10, padding: 14, color: '#f0f0f2', fontSize: 18, marginBottom: 6,
-  },
-  inputError:    { borderColor: '#f87171' },
-  validationMsg: { color: '#f87171', fontSize: 13, marginBottom: 10 },
+  charityCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.white, padding: 16, borderRadius: 24, borderWidth: 1, borderColor: COLORS.slate100, marginBottom: 12 },
+  charityCardActive: { borderColor: COLORS.primary, backgroundColor: COLORS.primaryGhost },
+  charityIconWrap: { width: 44, height: 44, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
+  charityName: { flex: 1, marginLeft: 16, fontSize: 16, fontWeight: '700', color: COLORS.slate600 },
+  charityNameActive: { color: COLORS.slate900 },
 
-  conversionRow: {
-    backgroundColor: '#0f2a26', borderRadius: 10, padding: 14,
-    marginBottom: 22, alignItems: 'center', borderWidth: 1, borderColor: '#2dd4bf22',
-  },
-  conversionText:      { color: '#8a8a94', fontSize: 17 },
-  conversionHighlight: { color: '#2dd4bf', fontWeight: '800', fontSize: 21 },
-  conversionRate:      { color: '#555', fontSize: 11, marginTop: 4 },
+  payBtn: { height: 72, backgroundColor: COLORS.slate900, borderRadius: 36, justifyContent: 'center', alignItems: 'center', marginTop: 32, ...SHADOW },
+  payBtnDisabled: { backgroundColor: COLORS.slate300 },
+  btnRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  payBtnText: { color: COLORS.white, fontWeight: '900', letterSpacing: 1, fontSize: 16 },
 
-  // Charities
-  charityOption: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: '#1a1a1f', borderRadius: 10, padding: 14,
-    borderWidth: 1, borderColor: '#2a2a32', marginBottom: 8,
-  },
-  charitySelected:     { borderColor: '#2dd4bf', backgroundColor: '#0f2a26' },
-  charityText:         { color: '#8a8a94', fontSize: 15 },
-  charityTextSelected: { color: '#f0f0f2', fontWeight: '600' },
-  checkmark:           { color: '#2dd4bf', fontSize: 18, fontWeight: '700' },
+  histItem: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: COLORS.slate50 },
+  histLeft: { flex: 1 },
+  histName: { fontSize: 17, fontWeight: '700', color: COLORS.slate900, marginBottom: 4 },
+  histDate: { fontSize: 13, fontWeight: '600', color: COLORS.slate400 },
+  histRight: { alignItems: 'flex-end' },
+  histAmt: { fontSize: 18, fontWeight: '900', color: COLORS.primaryDeep },
+  histPts: { fontSize: 12, fontWeight: '700', color: COLORS.slate400, marginTop: 2 },
 
-  // Buttons
-  donateBtn: {
-    backgroundColor: '#2dd4bf', borderRadius: 12, padding: 16,
-    alignItems: 'center', marginTop: 16,
-  },
-  donateBtnDisabled: { backgroundColor: '#2a2a32' },
-  donateBtnText:     { color: '#0f0f12', fontSize: 16, fontWeight: '700' },
-  earnBtn: {
-    backgroundColor: '#1a1a2f', borderRadius: 12, padding: 14,
-    alignItems: 'center', borderWidth: 1, borderColor: '#6366f133', marginTop: 10,
-  },
-  earnBtnText: { color: '#818cf8', fontSize: 14, fontWeight: '600' },
-  disclaimer:  { color: '#444', fontSize: 11, textAlign: 'center', marginTop: 24, lineHeight: 18 },
+  emptyContainer: { alignItems: 'center', marginTop: 100 },
+  emptyTitle: { fontSize: 20, fontWeight: '900', color: COLORS.slate900, marginTop: 24 },
+  emptySub: { fontSize: 15, color: COLORS.slate400, textAlign: 'center', marginTop: 8 },
 
-  // History
-  histItem: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start',
-    backgroundColor: '#1a1a1f', borderRadius: 12, padding: 16, marginBottom: 10,
-    borderWidth: 1, borderColor: '#2a2a32',
-  },
-  histLeft:       { flex: 1 },
-  histCharity:    { color: '#f0f0f2', fontSize: 15, fontWeight: '600', marginBottom: 2 },
-  histDate:       { color: '#8a8a94', fontSize: 12, marginBottom: 6 },
-  histStatusBox:  { alignSelf: 'flex-start', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
-  histStatusText: { fontSize: 12, fontWeight: '600' },
-  histRight:      { alignItems: 'flex-end' },
-  histDollar:     { color: '#2dd4bf', fontSize: 20, fontWeight: '800' },
-  histPoints:     { color: '#f87171', fontSize: 12, marginTop: 2 },
-
-  // Empty history
-  emptyBox:    { alignItems: 'center', paddingTop: 60 },
-  emptyEmoji:  { fontSize: 48, marginBottom: 12 },
-  emptyTitle:  { color: '#f0f0f2', fontSize: 18, fontWeight: '600', marginBottom: 8 },
-  emptySubText: { color: '#8a8a94', fontSize: 14, textAlign: 'center', lineHeight: 20, maxWidth: 280 },
-
-  // Payment Modal
-  modalRoot: { flex: 1, backgroundColor: '#0f0f12' },
-  modalHeader: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 20, paddingVertical: 14,
-    borderBottomWidth: 1, borderBottomColor: '#2a2a32',
-  },
-  modalTitle: { color: '#f0f0f2', fontSize: 17, fontWeight: '700' },
-  modalClose: { color: '#8a8a94', fontSize: 20, padding: 4 },
-  stripeBadge: {
-    backgroundColor: '#0f2a26', paddingVertical: 7, alignItems: 'center',
-    borderBottomWidth: 1, borderBottomColor: '#2dd4bf22',
-  },
-  stripeBadgeText: { color: '#2dd4bf', fontSize: 12, fontWeight: '600' },
-  webview: { flex: 1, backgroundColor: '#0f0f12' },
-  confirmOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(15,15,18,0.85)',
-    alignItems: 'center', justifyContent: 'center', gap: 14,
-  },
-  confirmText: { color: '#2dd4bf', fontSize: 15, fontWeight: '600' },
+  modalHeader: { height: 70, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 24, borderBottomWidth: 1, borderBottomColor: COLORS.slate100 },
+  modalTitle: { fontSize: 18, fontWeight: '800' },
+  overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(255,255,255,0.9)', justifyContent: 'center', alignItems: 'center' },
+  overlayText: { marginTop: 16, fontSize: 16, fontWeight: '700', color: COLORS.slate600 },
 });
