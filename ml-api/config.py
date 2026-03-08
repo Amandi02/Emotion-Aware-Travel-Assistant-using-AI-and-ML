@@ -25,6 +25,23 @@ PLACES365_CATEGORIES_PATH = os.environ.get(
     r"C:\Users\Collective User\Documents\Repositories\feelio\Sustainable-Vision-Multitask-Scene-Emission-Estimation-Model\assets\categories_places365.txt",
 )
 
+# ── Hybrid Recommender (Context + Venue Emotions) ───────────────────────────
+# Path to your Random Forest model and Label Encoder
+CONTEXT_MODEL_PATH = os.environ.get(
+    "CONTEXT_MODEL_PATH",
+    r"D:\Work Laptop\2. Research\Models\places_recommendation_engine\context_brain.pkl",
+)
+LABEL_ENCODER_PATH = os.environ.get(
+    "LABEL_ENCODER_PATH",
+    r"D:\Work Laptop\2. Research\Models\places_recommendation_engine\le_category.pkl",
+)
+
+# Path to your Yelp-derived Venue Emotions CSV
+VENUE_EMOTIONS_PATH = os.environ.get(
+    "VENUE_EMOTIONS_PATH",
+    r"D:\Work Laptop\2. Research\Emotion-Aware-Travel-Assistant-using-AI-and-ML\data\venue_6emotions_lookup.csv",
+)
+
 # ── Server ────────────────────────────────────────────────────────────────────
 ML_API_PORT = int(os.environ.get("ML_API_PORT", "8003"))
 ML_API_HOST = os.environ.get("ML_API_HOST", "0.0.0.0")
