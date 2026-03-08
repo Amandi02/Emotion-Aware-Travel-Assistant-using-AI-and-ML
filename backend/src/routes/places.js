@@ -48,74 +48,75 @@ const FIELD_MASK = [
 ].join(',');
 
 // ── GET /api/places/nearby ────────────────────────────────────────────────────
+// ── GET /api/places/nearby ────────────────────────────────────────────────────
 router.get('/nearby', authMiddleware, async (req, res) => {
-  const { lat, lng, emotion = 'neutral', radius = 15000 } = req.query;
+  // 1. Extract inputs (adding the new context metrics for your AI)
+  const { 
+    lat, 
+    lng, 
+    emotion = 'neutral', 
+    step_count = 0, // Fallback if mobile app isn't sending steps yet
+    local_time_hour = new Date().getHours() // Fallback to server time
+  } = req.query;
 
   if (!lat || !lng) {
     return res.status(400).json({ message: 'lat and lng are required' });
   }
-  if (!GOOGLE_KEY) {
-    return res.status(503).json({ message: 'Google Places API key not configured' });
-  }
-
-  const placeTypes = EMOTION_PLACE_TYPES[emotion] || EMOTION_PLACE_TYPES.neutral;
 
   try {
-    // New API: single POST request, all types at once, up to 20 results
-    const { data } = await axios.post(
-      NEARBY_URL,
-      {
-        includedTypes: placeTypes,          // all 4 types in one call
-        maxResultCount: 20,
-        locationRestriction: {
-          circle: {
-            center: {
-              latitude: parseFloat(lat),
-              longitude: parseFloat(lng),
-            },
-            radius: parseFloat(radius),
-          },
-        },
-      },
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Goog-Api-Key': GOOGLE_KEY,
-          'X-Goog-FieldMask': FIELD_MASK,
-        },
-        timeout: 10_000,
-      }
-    );
+    // 2. Call your Python Hybrid AI Recommender (Port 8003)
+    const ML_API_URL = process.env.ML_API_HOST 
+      ? `http://${process.env.ML_API_HOST}:${process.env.ML_API_PORT}`
+      : 'http://127.0.0.1:8003';
 
-    const rawPlaces = data.places || [];
+    const aiResponse = await axios.post(`${ML_API_URL}/api/v1/recommend`, {
+      emotion: emotion,
+      step_count: parseInt(step_count, 10),
+      lat: parseFloat(lat),
+      lon: parseFloat(lng),
+      local_time_hour: parseInt(local_time_hour, 10),
+      price_sensitivity: 1.0
+    });
 
-    const places = rawPlaces.slice(0, 20).map((p) => {
-      // Photo name format: "places/PLACE_ID/photos/PHOTO_REF"
+    // Extract the payload returned by your Python script
+    const { diagnostics, recommendations } = aiResponse.data;
+
+    // 3. Map the AI output to the exact format the mobile frontend expects
+    const places = recommendations.map((p) => {
+      // Photo mapping logic (assuming Python passes the raw Google Place data through)
       const photoName = p.photos?.[0]?.name ?? null;
-
-      // Build a direct media URL for the photo
-      const photoUrl = photoName
-        ? `${PLACES_NEW_BASE}/${photoName}/media?maxWidthPx=400&key=${GOOGLE_KEY}`
+      const photoUrl = photoName && process.env.GOOGLE_KEY
+        ? `https://places.googleapis.com/v1/${photoName}/media?maxWidthPx=400&key=${process.env.GOOGLE_KEY}`
         : null;
 
       return {
-        placeId: p.id,
-        name: p.displayName?.text ?? 'Unknown',
-        address: p.formattedAddress ?? '',
-        rating: p.rating ?? null,
-        userRatings: p.userRatingCount ?? 0,
-        types: p.types ?? [],
-        location: p.location ?? null,
-        photoName,                // pass this to /emission
+        // Fallbacks included to handle both old and new Google API JSON structures
+        placeId:      p.place_id || p.id || 'unknown',
+        name:         p.name || p.displayName?.text || 'Unknown',
+        address:      p.formattedAddress || p.vicinity || '',
+        rating:       p.rating || null,
+        userRatings:  p.userRatingCount || p.user_ratings_total || 0,
+        types:        p.types || [],
+        location:     p.location || p.geometry?.location || null,
+        photoName,
         photoUrl,
-        emission: null,       // fetched separately per place
+        emission:     null,         // Handled separately by their emission model
+        vfm_score:    p.vfm_score   // Let the frontend see your thesis math!
       };
     });
 
-    res.json({ emotion, places });
+    // 4. Return the intelligent payload to the user
+    res.json({ 
+      emotion, 
+      diagnostics, // Exposing weather & fuzzy radius for frontend UI (optional but cool)
+      places 
+    });
+
   } catch (err) {
-    const detail = err.response?.data?.error?.message || err.message;
-    res.status(502).json({ message: `Google Places error: ${detail}` });
+    console.error("🧠 AI Engine Error:", err.message);
+    // Catch errors from the Python service so Node.js doesn't crash
+    const detail = err.response?.data?.detail || err.message;
+    res.status(502).json({ message: `AI Recommender error: ${detail}` });
   }
 });
 
