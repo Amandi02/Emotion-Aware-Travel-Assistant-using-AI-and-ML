@@ -33,6 +33,15 @@ from config import (
 )
 from emotion_service import get_emotion_service
 from emission_service import get_emission_service
+from pydantic import BaseModel
+from core.hybrid_engine import HybridRecommender
+import services.weather as weather_service
+import services.places as places_service
+from core.utils import apply_pareto_filter, calculate_vfm_score
+
+
+
+
 
 # ── App ────────────────────────────────────────────────────────────────────────
 
@@ -211,6 +220,66 @@ async def predict_emission_url(
         raise HTTPException(503, f"Model checkpoint not found: {e}")
     except Exception as e:
         raise HTTPException(500, str(e))
+    
+
+# ── Recommendation Endpoint ─────────────────────────────────────────────────────────────────────    
+recommender_engine = HybridRecommender()
+
+class RecommenderRequest(BaseModel):
+    emotion: str
+    step_count: int
+    lat: float
+    lon: float
+    local_time_hour: int
+    price_sensitivity: Optional[float] = 1.0
+
+
+# --- CONTEXT-AWARE RECOMMENDER ENDPOINT ---
+@app.post("/api/places/recommend")
+async def get_recommendations(req: RecommenderRequest):
+    print(f"\n📥 REQUEST RECEIVED | Emotion: {req.emotion.upper()} | Steps: {req.step_count} | Time: {req.local_time_hour}:00")
+
+    # 1. Sense the Environment
+    temp, precip, clouds = weather_service.get_live_weather(req.lat, req.lon)
+    
+    # 2. Logic Engine Categories
+    top_categories = recommender_engine.get_top_categories(
+        req.local_time_hour, temp, precip, clouds, req.emotion, req.step_count, top_n=2
+    )
+    if not top_categories:
+        raise HTTPException(status_code=500, detail="AI Engine failed to generate categories.")
+
+    # 3. Fuzzy Engine Radius
+    dynamic_radius = recommender_engine.calculate_dynamic_radius(req.step_count)
+
+    # 4. Search Google Places
+    raw_candidates = []
+    for category in top_categories:
+        places = places_service.search_places(req.lat, req.lon, category, dynamic_radius)
+        raw_candidates.extend(places)
+
+    unique_candidates = {v['name']: v for v in raw_candidates}.values()
+
+    # 5. Filter and Rank
+    optimized_candidates = apply_pareto_filter(list(unique_candidates))
+    
+    final_results = []
+    for place in optimized_candidates:
+        score, decay = calculate_vfm_score(place, dynamic_radius, req.price_sensitivity)
+        place['vfm_score'] = round(score, 2)
+        final_results.append(place)
+
+    final_results.sort(key=lambda x: x['vfm_score'], reverse=True)
+
+    # 6. Return Payload
+    return {
+        "diagnostics": {
+            "weather": {"temp": temp, "precipitation": precip, "clouds": clouds},
+            "logic": {"fuzzy_radius_meters": dynamic_radius, "selected_categories": top_categories}
+        },
+        "recommendations": final_results[:5] 
+    }
+
 
 
 # ── Entry point ────────────────────────────────────────────────────────────────
