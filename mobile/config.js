@@ -2,7 +2,7 @@
 // Physical device / Expo Go → use your machine's Wi-Fi IP
 // Android emulator          → use http://10.0.2.2:3000/api
 // iOS simulator             → use http://localhost:3000/api
-export const API_URL = 'http://172.20.10.6:3000/api';
+export const API_URL = 'http://172.20.10.3:3000/api';
 
 // ── Stripe ────────────────────────────────────────────────────────────────────
 // Publishable key is safe to expose in the client.

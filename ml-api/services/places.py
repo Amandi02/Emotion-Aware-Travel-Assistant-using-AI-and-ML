@@ -4,7 +4,7 @@ import math
 from dotenv import load_dotenv
 
 load_dotenv()
-API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
+API_KEY = os.getenv("GOOGLE_PLACES_API_KEY") or os.getenv("GOOGLE_MAPS_API_KEY")
 
 def haversine(lat1, lon1, lat2, lon2):
     R = 6371000
@@ -14,21 +14,29 @@ def haversine(lat1, lon1, lat2, lon2):
     return R * (2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)))
 
 def search_places(lat: float, lon: float, keyword: str, radius: int):
-    if not API_KEY: return []
+    if not API_KEY:
+        print("⚠️ GOOGLE_PLACES_API_KEY not set. No places can be fetched.")
+        return []
     
     url = "https://places.googleapis.com/v1/places:searchText"
     headers = {
         "Content-Type": "application/json",
         "X-Goog-Api-Key": API_KEY,
-        "X-Goog-FieldMask": "places.displayName,places.location,places.rating,places.priceLevel"
+        "X-Goog-FieldMask": "places.displayName,places.location,places.rating,places.priceLevel,places.photos"
     }
     payload = {
         "textQuery": keyword,
         "locationBias": {"circle": {"center": {"latitude": lat, "longitude": lon}, "radius": float(radius)}}
     }
+
+    print(f"📡 Places Request → URL: {url}")
+    print(f"   Headers: X-Goog-Api-Key={API_KEY[:8]}...{API_KEY[-4:]} | FieldMask={headers['X-Goog-FieldMask']}")
+    print(f"   Payload: {payload}")
     
     try:
-        response = requests.post(url, json=payload, headers=headers).json()
+        raw = requests.post(url, json=payload, headers=headers)
+        response = raw.json()
+        print(f"📨 Places Response → status={raw.status_code} | body={response}")
         results = []
         for p in response.get('places', []):
             p_lat = p.get('location', {}).get('latitude')
@@ -44,7 +52,9 @@ def search_places(lat: float, lon: float, keyword: str, radius: int):
                 "rating": p.get('rating', 0),
                 "price_level": price_map.get(price_str, 2),
                 "dist": dist,
-                "type": keyword
+                "type": keyword,
+                "photos": p.get('photos', []),
+                "location": p.get('location', {}),
             })
         return results
     except Exception as e:

@@ -29,17 +29,17 @@ PLACES365_CATEGORIES_PATH = os.environ.get(
 # Path to your Random Forest model and Label Encoder
 CONTEXT_MODEL_PATH = os.environ.get(
     "CONTEXT_MODEL_PATH",
-    r"D:\Work Laptop\2. Research\Models\places_recommendation_engine\context_brain.pkl",
+    r"C:\Users\Collective User\Documents\Repositories\Emotion-Aware-Travel-Assistant-using-AI-and-ML\models\context_brain.pkl",
 )
 LABEL_ENCODER_PATH = os.environ.get(
     "LABEL_ENCODER_PATH",
-    r"D:\Work Laptop\2. Research\Models\places_recommendation_engine\le_category.pkl",
+    r"C:\Users\Collective User\Documents\Repositories\Emotion-Aware-Travel-Assistant-using-AI-and-ML\models\le_category.pkl",
 )
 
 # Path to your Yelp-derived Venue Emotions CSV
 VENUE_EMOTIONS_PATH = os.environ.get(
     "VENUE_EMOTIONS_PATH",
-    r"D:\Work Laptop\2. Research\Emotion-Aware-Travel-Assistant-using-AI-and-ML\data\venue_6emotions_lookup.csv",
+    r"C:\Users\Collective User\Documents\Repositories\feelio\ml-api\data\venue_6emotions_lookup.csv",
 )
 
 # ── Server ────────────────────────────────────────────────────────────────────

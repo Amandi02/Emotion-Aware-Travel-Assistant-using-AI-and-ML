@@ -235,7 +235,7 @@ class RecommenderRequest(BaseModel):
 
 
 # --- CONTEXT-AWARE RECOMMENDER ENDPOINT ---
-@app.post("/api/places/recommend")
+@app.post("/api/v1/recommend")
 async def get_recommendations(req: RecommenderRequest):
     print(f"\n📥 REQUEST RECEIVED | Emotion: {req.emotion.upper()} | Steps: {req.step_count} | Time: {req.local_time_hour}:00")
 
@@ -253,11 +253,13 @@ async def get_recommendations(req: RecommenderRequest):
     dynamic_radius = recommender_engine.calculate_dynamic_radius(req.step_count)
 
     # 4. Search Google Places
+    print(f"🔍 Searching categories: {top_categories} within {dynamic_radius}m of ({req.lat}, {req.lon})")
     raw_candidates = []
     for category in top_categories:
         places = places_service.search_places(req.lat, req.lon, category, dynamic_radius)
         raw_candidates.extend(places)
 
+    print(f"📦 Raw candidates found: {len(raw_candidates)}")
     unique_candidates = {v['name']: v for v in raw_candidates}.values()
 
     # 5. Filter and Rank
