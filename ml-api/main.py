@@ -37,7 +37,6 @@ from pydantic import BaseModel
 from core.hybrid_engine import HybridRecommender
 import services.weather as weather_service
 import services.places as places_service
-from core.utils import apply_pareto_filter, calculate_vfm_score
 
 
 
@@ -244,42 +243,36 @@ async def get_recommendations(req: RecommenderRequest):
     
     # 2. Logic Engine Categories
     top_categories = recommender_engine.get_top_categories(
-        req.local_time_hour, temp, precip, clouds, req.emotion, req.step_count, top_n=2
+        req.local_time_hour, temp, precip, clouds, req.emotion, req.step_count, top_n=3
     )
     if not top_categories:
         raise HTTPException(status_code=500, detail="AI Engine failed to generate categories.")
 
-    # 3. Fuzzy Engine Radius
-    dynamic_radius = recommender_engine.calculate_dynamic_radius(req.step_count)
-
-    # 4. Search Google Places
-    print(f"🔍 Searching categories: {top_categories} within {dynamic_radius}m of ({req.lat}, {req.lon})")
+    # 3. Search Google Places (fixed 10km radius, min 10 ratings enforced in places_service)
+    SEARCH_RADIUS = 10000
+    print(f"🔍 Searching categories: {top_categories} within {SEARCH_RADIUS}m of ({req.lat}, {req.lon})")
     raw_candidates = []
     for category in top_categories:
-        places = places_service.search_places(req.lat, req.lon, category, dynamic_radius)
+        places = places_service.search_places(req.lat, req.lon, category, SEARCH_RADIUS)
         raw_candidates.extend(places)
 
     print(f"📦 Raw candidates found: {len(raw_candidates)}")
     unique_candidates = {v['name']: v for v in raw_candidates}.values()
 
-    # 5. Filter and Rank
-    optimized_candidates = apply_pareto_filter(list(unique_candidates))
-    
-    final_results = []
-    for place in optimized_candidates:
-        score, decay = calculate_vfm_score(place, dynamic_radius, req.price_sensitivity)
-        place['vfm_score'] = round(score, 2)
-        final_results.append(place)
+    # 4. Rank by rating × user_rating_count, then return top 5
+    final_results = sorted(
+        list(unique_candidates),
+        key=lambda p: (p.get('rating', 0) * min(p.get('user_rating_count', 0), 500)),
+        reverse=True
+    )
 
-    final_results.sort(key=lambda x: x['vfm_score'], reverse=True)
-
-    # 6. Return Payload
+    # 5. Return Payload
     return {
         "diagnostics": {
             "weather": {"temp": temp, "precipitation": precip, "clouds": clouds},
-            "logic": {"fuzzy_radius_meters": dynamic_radius, "selected_categories": top_categories}
+            "logic": {"selected_categories": top_categories}
         },
-        "recommendations": final_results[:5] 
+        "recommendations": final_results[:5]
     }
 
 
