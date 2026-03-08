@@ -17,22 +17,22 @@ import { authMiddleware } from '../middleware/auth.js';
 
 const router = Router();
 
-const GOOGLE_KEY  = process.env.GOOGLE_PLACES_API_KEY;
-const ML_API_URL  = process.env.ML_API_URL || 'http://127.0.0.1:8003';
+const GOOGLE_KEY = process.env.GOOGLE_PLACES_API_KEY;
+const ML_API_URL = process.env.ML_API_URL || 'http://127.0.0.1:8003';
 
 // New Places API (v1) base URLs
-const PLACES_NEW_BASE  = 'https://places.googleapis.com/v1';
-const NEARBY_URL       = `${PLACES_NEW_BASE}/places:searchNearby`;
+const PLACES_NEW_BASE = 'https://places.googleapis.com/v1';
+const NEARBY_URL = `${PLACES_NEW_BASE}/places:searchNearby`;
 
 // ── Emotion → place-type mapping ──────────────────────────────────────────────
 const EMOTION_PLACE_TYPES = {
-  happy:    ['park', 'amusement_park', 'tourist_attraction', 'restaurant'],
-  sad:      ['spa', 'cafe', 'library', 'book_store'],
-  angry:    ['park', 'gym', 'yoga_studio', 'national_park'],
-  fear:     ['cafe', 'library', 'church', 'museum'],
-  neutral:  ['museum', 'shopping_mall', 'restaurant', 'art_gallery'],
+  happy: ['park', 'amusement_park', 'tourist_attraction', 'restaurant'],
+  sad: ['spa', 'cafe', 'library', 'book_store'],
+  angry: ['park', 'gym', 'yoga_studio', 'national_park'],
+  fear: ['cafe', 'library', 'church', 'museum'],
+  neutral: ['museum', 'shopping_mall', 'restaurant', 'art_gallery'],
   surprise: ['tourist_attraction', 'amusement_park', 'museum', 'zoo'],
-  disgust:  ['park', 'spa', 'natural_feature', 'gym'],
+  disgust: ['park', 'spa', 'gym'],
 };
 
 // Fields to request – keeps response lean and avoids billing surprises
@@ -82,15 +82,22 @@ router.get('/nearby', authMiddleware, async (req, res) => {
     const { diagnostics, recommendations } = aiResponse.data;
 
     // 3. Map the AI output to the exact format the mobile frontend expects
+    const KEY = process.env.GOOGLE_PLACES_API_KEY;
     const places = recommendations.map((p) => {
-      // Photo mapping logic (assuming Python passes the raw Google Place data through)
+      // Use Street View Static API for guaranteed exterior images.
+      // Falls back to Places photo if no coordinates are available.
+      const lat = p.location?.latitude ?? p.location?.lat ?? null;
+      const lng = p.location?.longitude ?? p.location?.lng ?? null;
+
       const photoName = p.photos?.[0]?.name ?? null;
-      const photoUrl = photoName && process.env.GOOGLE_KEY
-        ? `https://places.googleapis.com/v1/${photoName}/media?maxWidthPx=400&key=${process.env.GOOGLE_KEY}`
-        : null;
+
+      const photoUrl = KEY && lat && lng
+        ? `https://maps.googleapis.com/maps/api/streetview?size=600x400&location=${lat},${lng}&fov=90&pitch=0&source=outdoor&key=${KEY}`
+        : photoName && KEY
+          ? `https://places.googleapis.com/v1/${photoName}/media?maxWidthPx=600&key=${KEY}`
+          : null;
 
       return {
-        // Fallbacks included to handle both old and new Google API JSON structures
         placeId:      p.place_id || p.id || 'unknown',
         name:         p.name || p.displayName?.text || 'Unknown',
         address:      p.formattedAddress || p.vicinity || '',
@@ -100,8 +107,8 @@ router.get('/nearby', authMiddleware, async (req, res) => {
         location:     p.location || p.geometry?.location || null,
         photoName,
         photoUrl,
-        emission:     null,         // Handled separately by their emission model
-        vfm_score:    p.vfm_score   // Let the frontend see your thesis math!
+        emission: null,
+        vfm_score: p.vfm_score
       };
     });
 

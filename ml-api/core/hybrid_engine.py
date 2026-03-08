@@ -4,6 +4,7 @@ import joblib
 import os
 import skfuzzy as fuzz
 from skfuzzy import control as ctrl
+from config import CONTEXT_MODEL_PATH, LABEL_ENCODER_PATH, VENUE_EMOTIONS_PATH
 
 class HybridRecommender:
     def __init__(self):
@@ -11,15 +12,17 @@ class HybridRecommender:
         
         # 1. Load the ML Context Model (Random Forest)
         try:
-            self.model = joblib.load("models/context_brain.pkl")
-            self.le_cat = joblib.load("models/le_category.pkl")
+            self.model = joblib.load(CONTEXT_MODEL_PATH)
+            self.le_cat = joblib.load(LABEL_ENCODER_PATH)
             print(" ✅ ML Models loaded successfully.")
         except FileNotFoundError:
-            print(" ❌ Error: context_brain.pkl or le_category.pkl not found!")
+            print(f" ❌ Error: context_brain.pkl or le_category.pkl not found!\n   Expected at: {CONTEXT_MODEL_PATH}")
+            self.model = None
+            self.le_cat = None
 
         # 2. Dynamically Load Venue Emotions from your Phase 2 CSV
         try:
-            df_emotions = pd.read_csv("data/venue_6emotions_lookup.csv")
+            df_emotions = pd.read_csv(VENUE_EMOTIONS_PATH)
             # Clean category strings to ensure matching
             df_emotions['Category'] = df_emotions['Category'].astype(str).str.lower().str.strip()
             # Convert to a dictionary for O(1) fast lookups during live API requests

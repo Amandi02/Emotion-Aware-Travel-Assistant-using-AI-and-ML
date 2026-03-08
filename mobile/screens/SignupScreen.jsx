@@ -20,7 +20,7 @@ export default function SignupScreen({ navigation }) {
     setError('');
     setLoading(true);
     try {
-      const { data } = await api.post('/auth/register', { name, email, password });
+      const { data } = await api.post('/auth/signup', { name, email, password });
       await login(data.user, data.token);
       navigation.replace('Dashboard');
     } catch (err) {

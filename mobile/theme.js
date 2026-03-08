@@ -28,6 +28,7 @@ export const COLORS = {
   slate400: '#94A3B8',
   slate500: '#64748B',
   slate600: '#475569',
+  slate700: '#334155',
   slate800: '#1E293B',
   slate900: '#0F172A',
 
