@@ -19,10 +19,23 @@ const EMOTION_EMOJI = {
   fear: '😨', neutral: '😐', surprise: '😲', disgust: '🤢',
 };
 
+// Accent colours per emotion for the breakdown bars
+const EMOTION_COLOR = {
+  happy:   '#10B981',  // emerald
+  sad:     '#3B82F6',  // blue
+  angry:   '#EF4444',  // red
+  anger:   '#EF4444',
+  fear:    '#F97316',  // orange
+  neutral: '#94A3B8',  // slate
+  surprise:'#F59E0B',  // amber
+  disgust: '#8B5CF6',  // purple
+};
+
 export default function EmotionScanScreen({ navigation }) {
   const [videoUri, setVideoUri] = useState(null);
   const [emotion, setEmotion] = useState(null);
   const [percent, setPercent] = useState(null);
+  const [allEmotions, setAllEmotions] = useState(null);
   const [loading, setLoading] = useState(false);
 
   const startScanning = async () => {
@@ -43,6 +56,7 @@ export default function EmotionScanScreen({ navigation }) {
       setVideoUri(result.assets[0].uri);
       setEmotion(null);
       setPercent(null);
+      setAllEmotions(null);
     }
   };
 
@@ -55,6 +69,7 @@ export default function EmotionScanScreen({ navigation }) {
       const result = await mlApi.analyzeEmotionVideo(videoUri, mime);
       setEmotion(result.emotion);
       setPercent(result.percent);
+      setAllEmotions(result.average_emotions ?? null);
     } catch (err) {
       Alert.alert('Analysis failed', err.message || 'Could not detect emotion.');
     } finally {
@@ -108,6 +123,7 @@ export default function EmotionScanScreen({ navigation }) {
         {/* ── Analysis Results ───────────────────────────────────────── */}
         {emotion && (
           <View style={styles.resultSection}>
+            {/* Dominant emotion hero card */}
             <View style={styles.resultCard}>
               <View style={styles.resultEmojiWrap}>
                 <Text style={styles.resultEmoji}>{EMOTION_EMOJI[emotion]}</Text>
@@ -116,12 +132,48 @@ export default function EmotionScanScreen({ navigation }) {
                 <Text style={styles.resultName}>{emotion.toUpperCase()}</Text>
                 <View style={styles.confRow}>
                   <View style={styles.confBarBg}>
-                    <View style={[styles.confBarFill, { width: `${percent}%` }]} />
+                    <View style={[styles.confBarFill, { width: `${percent}%`, backgroundColor: EMOTION_COLOR[emotion] ?? COLORS.primary }]} />
                   </View>
                   <Text style={styles.resultConf}>{percent}%</Text>
                 </View>
               </View>
             </View>
+
+            {/* Full emotion breakdown */}
+            {allEmotions && (
+              <View style={styles.breakdownCard}>
+                <Text style={styles.breakdownTitle}>Full Emotion Breakdown</Text>
+                {Object.entries(allEmotions)
+                  .sort((a, b) => b[1] - a[1])
+                  .map(([name, pct]) => {
+                    const isDominant = name === emotion;
+                    const barColor = EMOTION_COLOR[name] ?? COLORS.primary;
+                    return (
+                      <View key={name} style={styles.breakdownRow}>
+                        <Text style={styles.breakdownEmoji}>{EMOTION_EMOJI[name] ?? '🙂'}</Text>
+                        <View style={styles.breakdownMiddle}>
+                          <Text style={[styles.breakdownLabel, isDominant && styles.breakdownLabelBold]}>
+                            {name.charAt(0).toUpperCase() + name.slice(1)}
+                            {isDominant ? '  ✦' : ''}
+                          </Text>
+                          <View style={styles.breakdownBarBg}>
+                            <View
+                              style={[
+                                styles.breakdownBarFill,
+                                { width: `${pct}%`, backgroundColor: barColor },
+                                isDominant && styles.breakdownBarDominant,
+                              ]}
+                            />
+                          </View>
+                        </View>
+                        <Text style={[styles.breakdownPct, isDominant && { color: barColor }]}>
+                          {pct}%
+                        </Text>
+                      </View>
+                    );
+                  })}
+              </View>
+            )}
           </View>
         )}
       </ScrollView>
@@ -279,6 +331,61 @@ const styles = StyleSheet.create({
   confBarBg: { flex: 1, height: 6, backgroundColor: COLORS.slate200, borderRadius: 3, overflow: 'hidden' },
   confBarFill: { height: '100%', backgroundColor: COLORS.primary },
   resultConf: { fontSize: 13, fontWeight: '800', color: COLORS.slate500, width: 40 },
+
+  // ── Breakdown card ──────────────────────────────────────────────────────────
+  breakdownCard: {
+    marginTop: 16,
+    backgroundColor: COLORS.slate50,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: COLORS.slate100,
+    padding: 20,
+    gap: 14,
+  },
+  breakdownTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.slate500,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
+  breakdownRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  breakdownEmoji: { fontSize: 20, width: 28, textAlign: 'center' },
+  breakdownMiddle: { flex: 1, gap: 4 },
+  breakdownLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.slate600,
+  },
+  breakdownLabelBold: {
+    fontWeight: '900',
+    color: COLORS.slate900,
+  },
+  breakdownBarBg: {
+    height: 6,
+    backgroundColor: COLORS.slate200,
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  breakdownBarFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  breakdownBarDominant: {
+    height: 8,
+  },
+  breakdownPct: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.slate400,
+    width: 44,
+    textAlign: 'right',
+  },
 
   footer: {
     position: 'absolute',

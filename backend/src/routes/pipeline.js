@@ -46,7 +46,7 @@ router.post(
       });
 
       const { data } = await axios.post(
-        `${ML_API_URL}/api/emotion/analyze-video`,
+        `${ML_API_URL}/api/emotion/analyze-video?full=true`,
         form,
         {
           headers: form.getHeaders(),
@@ -54,7 +54,7 @@ router.post(
         }
       );
 
-      res.json(data);   // { emotion, percent }
+      res.json(data);   // { emotion, percent, average_emotions, frames_analyzed, total_frames }
     } catch (err) {
       const detail = err.response?.data?.detail || err.message;
       res.status(502).json({ message: `ML API error: ${detail}` });

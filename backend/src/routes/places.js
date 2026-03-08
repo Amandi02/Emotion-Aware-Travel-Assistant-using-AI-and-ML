@@ -17,22 +17,22 @@ import { authMiddleware } from '../middleware/auth.js';
 
 const router = Router();
 
-const GOOGLE_KEY  = process.env.GOOGLE_PLACES_API_KEY;
-const ML_API_URL  = process.env.ML_API_URL || 'http://127.0.0.1:8003';
+const GOOGLE_KEY = process.env.GOOGLE_PLACES_API_KEY;
+const ML_API_URL = process.env.ML_API_URL || 'http://127.0.0.1:8003';
 
 // New Places API (v1) base URLs
-const PLACES_NEW_BASE  = 'https://places.googleapis.com/v1';
-const NEARBY_URL       = `${PLACES_NEW_BASE}/places:searchNearby`;
+const PLACES_NEW_BASE = 'https://places.googleapis.com/v1';
+const NEARBY_URL = `${PLACES_NEW_BASE}/places:searchNearby`;
 
 // ── Emotion → place-type mapping ──────────────────────────────────────────────
 const EMOTION_PLACE_TYPES = {
-  happy:    ['park', 'amusement_park', 'tourist_attraction', 'restaurant'],
-  sad:      ['spa', 'cafe', 'library', 'book_store'],
-  angry:    ['park', 'gym', 'yoga_studio', 'national_park'],
-  fear:     ['cafe', 'library', 'church', 'museum'],
-  neutral:  ['museum', 'shopping_mall', 'restaurant', 'art_gallery'],
+  happy: ['park', 'amusement_park', 'tourist_attraction', 'restaurant'],
+  sad: ['spa', 'cafe', 'library', 'book_store'],
+  angry: ['park', 'gym', 'yoga_studio', 'national_park'],
+  fear: ['cafe', 'library', 'church', 'museum'],
+  neutral: ['museum', 'shopping_mall', 'restaurant', 'art_gallery'],
   surprise: ['tourist_attraction', 'amusement_park', 'museum', 'zoo'],
-  disgust:  ['park', 'spa', 'natural_feature', 'gym'],
+  disgust: ['park', 'spa', 'gym'],
 };
 
 // Fields to request – keeps response lean and avoids billing surprises
@@ -70,7 +70,7 @@ router.get('/nearby', authMiddleware, async (req, res) => {
         locationRestriction: {
           circle: {
             center: {
-              latitude:  parseFloat(lat),
+              latitude: parseFloat(lat),
               longitude: parseFloat(lng),
             },
             radius: parseFloat(radius),
@@ -79,8 +79,8 @@ router.get('/nearby', authMiddleware, async (req, res) => {
       },
       {
         headers: {
-          'Content-Type':    'application/json',
-          'X-Goog-Api-Key':  GOOGLE_KEY,
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': GOOGLE_KEY,
           'X-Goog-FieldMask': FIELD_MASK,
         },
         timeout: 10_000,
@@ -89,7 +89,7 @@ router.get('/nearby', authMiddleware, async (req, res) => {
 
     const rawPlaces = data.places || [];
 
-    const places = rawPlaces.slice(0, 10).map((p) => {
+    const places = rawPlaces.slice(0, 20).map((p) => {
       // Photo name format: "places/PLACE_ID/photos/PHOTO_REF"
       const photoName = p.photos?.[0]?.name ?? null;
 
@@ -99,16 +99,16 @@ router.get('/nearby', authMiddleware, async (req, res) => {
         : null;
 
       return {
-        placeId:      p.id,
-        name:         p.displayName?.text ?? 'Unknown',
-        address:      p.formattedAddress ?? '',
-        rating:       p.rating ?? null,
-        userRatings:  p.userRatingCount ?? 0,
-        types:        p.types ?? [],
-        location:     p.location ?? null,
+        placeId: p.id,
+        name: p.displayName?.text ?? 'Unknown',
+        address: p.formattedAddress ?? '',
+        rating: p.rating ?? null,
+        userRatings: p.userRatingCount ?? 0,
+        types: p.types ?? [],
+        location: p.location ?? null,
         photoName,                // pass this to /emission
         photoUrl,
-        emission:     null,       // fetched separately per place
+        emission: null,       // fetched separately per place
       };
     });
 
