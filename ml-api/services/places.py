@@ -22,7 +22,7 @@ def search_places(lat: float, lon: float, keyword: str, radius: int):
     headers = {
         "Content-Type": "application/json",
         "X-Goog-Api-Key": API_KEY,
-        "X-Goog-FieldMask": "places.displayName,places.location,places.rating,places.priceLevel,places.photos"
+        "X-Goog-FieldMask": "places.displayName,places.location,places.rating,places.userRatingCount,places.priceLevel,places.photos"
     }
     payload = {
         "textQuery": keyword,
@@ -39,17 +39,23 @@ def search_places(lat: float, lon: float, keyword: str, radius: int):
         print(f"📨 Places Response → status={raw.status_code} | body={response}")
         results = []
         for p in response.get('places', []):
+            # Skip places with fewer than 10 user ratings (low-quality / unverified)
+            user_rating_count = p.get('userRatingCount', 0)
+            if user_rating_count < 10:
+                continue
+
             p_lat = p.get('location', {}).get('latitude')
             p_lon = p.get('location', {}).get('longitude')
             dist = haversine(lat, lon, p_lat, p_lon) if p_lat and p_lon else radius
-            
+
             # Map price level string to number (1-4)
             price_str = p.get('priceLevel', 'PRICE_LEVEL_UNSPECIFIED')
             price_map = {'PRICE_LEVEL_FREE': 0, 'PRICE_LEVEL_INEXPENSIVE': 1, 'PRICE_LEVEL_MODERATE': 2, 'PRICE_LEVEL_EXPENSIVE': 3, 'PRICE_LEVEL_VERY_EXPENSIVE': 4}
-            
+
             results.append({
                 "name": p.get('displayName', {}).get('text', 'Unknown'),
                 "rating": p.get('rating', 0),
+                "user_rating_count": user_rating_count,
                 "price_level": price_map.get(price_str, 2),
                 "dist": dist,
                 "type": keyword,

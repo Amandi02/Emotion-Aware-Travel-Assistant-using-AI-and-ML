@@ -2,8 +2,6 @@ import pandas as pd
 import numpy as np
 import joblib
 import os
-import skfuzzy as fuzz
-from skfuzzy import control as ctrl
 from config import CONTEXT_MODEL_PATH, LABEL_ENCODER_PATH, VENUE_EMOTIONS_PATH
 
 class HybridRecommender:
@@ -43,35 +41,6 @@ class HybridRecommender:
             "surprise": {"emo_surprise": 1.5, "emo_joy": 1.0, "emo_sadness": -1.0, "emo_fear": -0.5, "emo_anger": 0.0, "emo_disgust": 0.0}
         }
 
-        # ... (Keep your ML loading and mood_weights code here) ...
-
-        # 4. Initialize WESAD Fuzzy Logic System for Radius
-        print(" ⚙️ Initializing Fuzzy Inference System for Fatigue...")
-        
-        # Antecedent (Input): Steps from 0 to 20,000
-        self.step_input = ctrl.Antecedent(np.arange(0, 20001, 1), 'steps')
-        
-        # Consequent (Output): Radius from 100m to 3000m
-        self.radius_output = ctrl.Consequent(np.arange(100, 3001, 1), 'radius')
-
-        # Membership Functions for Steps (Fatigue)
-        self.step_input['low'] = fuzz.trimf(self.step_input.universe, [0, 0, 8000])
-        self.step_input['moderate'] = fuzz.trimf(self.step_input.universe, [5000, 10000, 15000])
-        self.step_input['high'] = fuzz.trimf(self.step_input.universe, [12000, 20000, 20000])
-
-        # Membership Functions for Radius (Distance)
-        self.radius_output['short'] = fuzz.trimf(self.radius_output.universe, [100, 100, 1000])
-        self.radius_output['medium'] = fuzz.trimf(self.radius_output.universe, [500, 1500, 2500])
-        self.radius_output['long'] = fuzz.trimf(self.radius_output.universe, [2000, 3000, 3000])
-
-        # The WESAD Biological Rules
-        rule1 = ctrl.Rule(self.step_input['high'], self.radius_output['short'])
-        rule2 = ctrl.Rule(self.step_input['moderate'], self.radius_output['medium'])
-        rule3 = ctrl.Rule(self.step_input['low'], self.radius_output['long'])
-
-        # Build the Simulator
-        self.radius_ctrl = ctrl.ControlSystem([rule1, rule2, rule3])
-        self.radius_sim = ctrl.ControlSystemSimulation(self.radius_ctrl)
 
     def get_top_categories(self, hour, temp, precip, cloud, user_emotion, step_count, top_n=3):
         user_emotion = user_emotion.lower().strip()
@@ -119,26 +88,3 @@ class HybridRecommender:
         
         # Return just the category names for the top N winners
         return [item[0] for item in scored_candidates[:top_n]]
-
-    def calculate_dynamic_radius(self, step_count):
-        """Calculates search radius using Fuzzy Logic based on WESAD fatigue heuristics."""
-        
-        # Cap steps at 20,000 so the fuzzy math doesn't crash if someone runs a marathon
-        capped_steps = min(max(step_count, 0), 20000)
-        
-        # Feed the input into the Fuzzy Engine
-        self.radius_sim.input['steps'] = capped_steps
-        
-        try:
-            # Crunch the math (Centroid Defuzzification)
-            self.radius_sim.compute()
-            final_radius = self.radius_sim.output['radius']
-            
-            # Print for your server logs to prove it's working
-            print(f" 📏 Fuzzy Engine calculated radius: {int(final_radius)}m (Steps: {capped_steps})")
-            
-            return int(final_radius)
-            
-        except Exception as e:
-            print(f" ⚠️ Fuzzy computation failed: {e}. Defaulting to 2000m.")
-            return 2000
