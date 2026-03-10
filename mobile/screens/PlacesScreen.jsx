@@ -75,18 +75,27 @@ export default function PlacesScreen({ route, navigation }) {
       >
         <View style={styles.imageContainer}>
           {item.photoUrl ? (
-            <Image source={{ uri: item.photoUrl }} style={styles.image} resizeMode="cover" />
+            <Image
+              source={{ uri: item.photoUrl }}
+              style={styles.image}
+              resizeMode="cover"
+              onError={(error) => {
+                console.warn('Image load error for place:', item.name, error.nativeEvent.error);
+              }}
+              onLoad={() => {
+                console.log('Image loaded successfully for place:', item.name);
+              }}
+            />
           ) : (
             <View style={[styles.image, styles.placeholder]}>
               <Ionicons name="image-outline" size={48} color={COLORS.slate300} />
+                <Text style={{ marginTop: 8, fontSize: 12, color: COLORS.slate400 }}>
+                  No image available
+                </Text>
             </View>
           )}
 
-          {/* Eco Badge (Floating) */}
-          <View style={styles.ecoBadge}>
-            <Ionicons name="leaf" size={14} color={COLORS.primaryDeep} />
-            <Text style={styles.ecoText}>{score}% Green</Text>
-          </View>
+
 
           {/* Rating overlay */}
           <View style={styles.overlay}>

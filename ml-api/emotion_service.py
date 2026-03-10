@@ -159,6 +159,24 @@ class EmotionService:
             for e in emotion_keys
         }
 
+        # Remove "neutral" emotion and normalize remaining percentages to sum to 100%
+        if "neutral" in avg_emotions:
+            neutral_pct = avg_emotions.pop("neutral")
+        else:
+            neutral_pct = 0.0
+        
+        # Normalize remaining emotions so they sum to 100%
+        if avg_emotions:
+            total_without_neutral = sum(avg_emotions.values())
+            if total_without_neutral > 0:
+                avg_emotions = {
+                    e: round((pct / total_without_neutral) * 100, 2)
+                    for e, pct in avg_emotions.items()
+                }
+            else:
+                # Fallback: if all emotions were neutral, set a default
+                avg_emotions = {"happy": 100.0}
+
         dominant_name, dominant_pct = max(avg_emotions.items(), key=lambda x: x[1])
 
         return {

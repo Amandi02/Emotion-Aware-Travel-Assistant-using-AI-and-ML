@@ -22,7 +22,7 @@ def search_places(lat: float, lon: float, keyword: str, radius: int):
     headers = {
         "Content-Type": "application/json",
         "X-Goog-Api-Key": API_KEY,
-        "X-Goog-FieldMask": "places.displayName,places.location,places.rating,places.userRatingCount,places.priceLevel,places.photos"
+        "X-Goog-FieldMask": "places.id,places.displayName,places.location,places.rating,places.userRatingCount,places.priceLevel,places.photos,places.formattedAddress"
     }
     payload = {
         "textQuery": keyword,
@@ -53,12 +53,18 @@ def search_places(lat: float, lon: float, keyword: str, radius: int):
             price_map = {'PRICE_LEVEL_FREE': 0, 'PRICE_LEVEL_INEXPENSIVE': 1, 'PRICE_LEVEL_MODERATE': 2, 'PRICE_LEVEL_EXPENSIVE': 3, 'PRICE_LEVEL_VERY_EXPENSIVE': 4}
 
             results.append({
+                "id": p.get('id', ''),
+                "place_id": p.get('id', ''),  # Alias for compatibility
                 "name": p.get('displayName', {}).get('text', 'Unknown'),
+                "displayName": p.get('displayName', {}),  # Keep full object for compatibility
+                "formattedAddress": p.get('formattedAddress', ''),
                 "rating": p.get('rating', 0),
-                "user_rating_count": user_rating_count,
+                "userRatingCount": user_rating_count,
+                "user_rating_count": user_rating_count,  # Alias for compatibility
                 "price_level": price_map.get(price_str, 2),
                 "dist": dist,
                 "type": keyword,
+                "types": [keyword],  # Add types array for compatibility
                 "photos": p.get('photos', []),
                 "location": p.get('location', {}),
             })

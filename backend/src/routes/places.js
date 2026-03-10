@@ -84,18 +84,47 @@ router.get('/nearby', authMiddleware, async (req, res) => {
     // 3. Map the AI output to the exact format the mobile frontend expects
     const KEY = process.env.GOOGLE_PLACES_API_KEY;
     const places = recommendations.map((p) => {
-      // Use Street View Static API for guaranteed exterior images.
-      // Falls back to Places photo if no coordinates are available.
       const lat = p.location?.latitude ?? p.location?.lat ?? null;
       const lng = p.location?.longitude ?? p.location?.lng ?? null;
 
-      const photoName = p.photos?.[0]?.name ?? null;
+      // Extract photo name from photos array (Google Places API New format)
+      // Photo name format: "places/{place_id}/photos/{photo_reference}"
+      let photoName = null;
+      if (p.photos && Array.isArray(p.photos) && p.photos.length > 0) {
+        const firstPhoto = p.photos[0];
+        // Try name first, then photoReference (for backward compatibility)
+        photoName = firstPhoto?.name || firstPhoto?.photoReference || null;
+      }
 
-      const photoUrl = KEY && lat && lng
-        ? `https://maps.googleapis.com/maps/api/streetview?size=600x400&location=${lat},${lng}&fov=90&pitch=0&source=outdoor&key=${KEY}`
-        : photoName && KEY
-          ? `https://places.googleapis.com/v1/${photoName}/media?maxWidthPx=600&key=${KEY}`
-          : null;
+      // Generate photo URL with priority: Places photo > Street View > null
+      let photoUrl = null;
+      if (KEY) {
+        // Priority 1: Use Places API photo if available (most reliable)
+        if (photoName) {
+          photoUrl = `https://places.googleapis.com/v1/${photoName}/media?maxWidthPx=600&key=${KEY}`;
+        }
+        // Priority 2: Fall back to Street View Static API if coordinates available
+        else if (lat && lng) {
+          photoUrl = `https://maps.googleapis.com/maps/api/streetview?size=600x400&location=${lat},${lng}&fov=90&pitch=0&source=outdoor&key=${KEY}`;
+        }
+      }
+
+      // Log for debugging
+      if (!photoUrl) {
+        console.warn(`⚠️ No photo URL for place: ${p.name || 'Unknown'}`, {
+          hasPhotoName: !!photoName,
+          photoName: photoName,
+          hasLocation: !!(lat && lng),
+          hasKey: !!KEY,
+          photosCount: p.photos?.length || 0,
+          photosStructure: p.photos?.[0] ? JSON.stringify(p.photos[0]) : 'no photos'
+        });
+      } else {
+        console.log(`✅ Photo URL generated for place: ${p.name || 'Unknown'}`, {
+          photoUrl: photoUrl.substring(0, 100) + '...',
+          source: photoName ? 'Places API' : 'Street View'
+        });
+      }
 
       return {
         placeId:      p.place_id || p.id || 'unknown',

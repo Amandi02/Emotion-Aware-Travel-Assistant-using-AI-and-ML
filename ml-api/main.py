@@ -107,6 +107,22 @@ async def analyze_frame(
     except Exception as e:
         raise HTTPException(500, f"Emotion analysis failed: {e}")
 
+    # Remove "neutral" emotion and normalize remaining percentages to sum to 100%
+    if "neutral" in scores:
+        scores.pop("neutral")
+    
+    # Normalize remaining emotions so they sum to 100%
+    if scores:
+        total_without_neutral = sum(scores.values())
+        if total_without_neutral > 0:
+            scores = {
+                e: round((pct / total_without_neutral) * 100, 2)
+                for e, pct in scores.items()
+            }
+        else:
+            # Fallback: if all emotions were neutral, set a default
+            scores = {"happy": 100.0}
+
     dominant_name, dominant_pct = max(scores.items(), key=lambda x: x[1])
     dominant_pct = round(dominant_pct, 2)
 
